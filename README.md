@@ -7,7 +7,9 @@ earns yield, always signing from their own wallet.
 Docs:
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — how it works, what's real vs simulated, and the seams
   where `contracts`/`backend` plug in. **Read this first.**
-- [FLOW.md](./FLOW.md) — product flow + the proposed backend API contract.
+- [API.md](./API.md) — the backend API contract (auth, portfolio, operations, fiat on-ramp).
+  **For whoever builds `backend`.**
+- [FLOW.md](./FLOW.md) — product flow.
 
 > The local **contracts demo** (the viem single-page app that drives anvil) lives in the contracts
 > repo: [`contracts/demo/`](https://github.com/CryptoPiggy000/contracts/tree/main/demo).

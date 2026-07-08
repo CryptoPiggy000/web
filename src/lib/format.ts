@@ -15,13 +15,6 @@ export function usdToNumber(base: bigint): number {
   return Number(formatUnits(base, USDC_DECIMALS));
 }
 
-export function fmtUsdNum(n: number): string {
-  return `$${n.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
 export function shortAddress(address?: string): string {
   if (!address) return "";
   return `${address.slice(0, 6)}…${address.slice(-4)}`;

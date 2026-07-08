@@ -6,7 +6,7 @@ import { useSim, deployedTotalWei, accruedWei } from "@/lib/sim";
 import { fmtUsd, usdToNumber } from "@/lib/format";
 import { BalanceCard } from "@/components/balance-card";
 import { Button } from "@/components/button";
-import { IconTrendUp, IconArrowDown } from "@/components/icons";
+import { IconTrendUp, IconArrowDown, IconPlus } from "@/components/icons";
 import { DepositSheet } from "@/components/deposit-sheet";
 import { WithdrawSheet } from "@/components/withdraw-sheet";
 import { GrowSheet } from "@/components/grow-sheet";
@@ -16,37 +16,43 @@ type SheetName = "deposit" | "withdraw" | "grow" | "settings" | null;
 
 export default function Home() {
   const { piggyAddress, balance } = usePiggy();
-  const { positions, earnSince, harvestedWei } = useSim();
+  const { positions, earnSince, harvestedWei, sandboxWei } = useSim();
   const [sheet, setSheet] = useState<SheetName>(null);
 
-  const deployed = deployedTotalWei(positions);
-  const idle = balance > deployed ? balance - deployed : 0n;
-  const empty = balance === 0n && positions.length === 0;
+  // Tiền trong ví (spendable) = USDC thật + lãi đã harvest + tiền nạp fiat dev (sandbox).
+  const spendable = balance + BigInt(harvestedWei) + BigInt(sandboxWei);
+  const deployed = deployedTotalWei(positions); // vốn đang earn
+  const resting = spendable > deployed ? spendable - deployed : 0n; // trong ví, chưa earn
+  // Rút thật chỉ được phần USDC thật (không phải sandbox/lãi sim).
+  const realWithdrawable = resting < balance ? resting : balance;
   const earning = deployed > 0n;
+  const empty =
+    balance === 0n && positions.length === 0 && sandboxWei === "0" && harvestedWei === "0";
+
+  const harvestedUsd = Number(BigInt(harvestedWei)) / 1e6;
+  const sandboxUsd = Number(BigInt(sandboxWei)) / 1e6;
+  const spendableUsd = Number(spendable) / 1e6; // để heo nảy khi tiền vào (kể cả nạp thẻ)
 
   const blendedApy = earning
     ? positions.reduce((a, p) => a + (p.apy ?? 0) * Number(BigInt(p.amountWei)), 0) /
       Number(deployed)
     : 0;
 
-  // Số dư sống = USDC thật + lãi đã harvest + lãi đang cộng dồn (Phase 0 sim).
+  // Số dư sống = spendable + lãi đang cộng dồn (Phase 0 sim).
   const realUsd = usdToNumber(balance);
-  const harvestedUsd = Number(BigInt(harvestedWei)) / 1e6;
   const compute = useCallback(
-    (now: number) => realUsd + harvestedUsd + Number(accruedWei(positions, earnSince, now)) / 1e6,
-    [realUsd, harvestedUsd, positions, earnSince],
+    (now: number) =>
+      realUsd + harvestedUsd + sandboxUsd + Number(accruedWei(positions, earnSince, now)) / 1e6,
+    [realUsd, harvestedUsd, sandboxUsd, positions, earnSince],
   );
 
   const close = () => setSheet(null);
-  const primaryLabel = earning ? "Earn more" : "Start earning";
+  const earnLabel = earning ? "Earn more" : "Start earning";
 
   const status = empty ? (
     <span className="text-muted">Feed your piggy to start.</span>
   ) : earning ? (
-    <span className="text-good">
-      Growing at ≈{blendedApy.toFixed(1)}%/yr
-      {idle > 0n && <span className="text-muted"> · {fmtUsd(idle)} resting</span>}
-    </span>
+    <span className="text-good">Growing at ≈{blendedApy.toFixed(1)}%/yr</span>
   ) : (
     <span className="text-muted">Resting. Put it to work.</span>
   );
@@ -73,33 +79,58 @@ export default function Home() {
             compute={compute}
             precision={earning ? 4 : 2}
             status={status}
-            bumpValue={realUsd}
+            bumpValue={spendableUsd}
           />
+
+          {earning && (
+            <div className="mt-2 flex items-center gap-4 px-6 text-sm">
+              <span className="text-muted">
+                In wallet <span className="font-medium text-ink">{fmtUsd(resting)}</span>
+              </span>
+              <span className="text-line">·</span>
+              <span className="text-muted">
+                Earning <span className="font-medium text-ink">{fmtUsd(deployed)}</span>
+              </span>
+            </div>
+          )}
         </div>
 
-        <div className="flex w-full flex-col items-center gap-3 px-6">
-          <Button full size="lg" icon={<IconTrendUp />} onClick={() => setSheet("grow")}>
-            {primaryLabel}
-          </Button>
-          {!empty && (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<IconArrowDown />}
-              onClick={() => setSheet("withdraw")}
-            >
-              Withdraw
+        <div className="flex w-full flex-col gap-3 px-6">
+          {empty ? (
+            <Button full size="lg" icon={<IconPlus />} onClick={() => setSheet("deposit")}>
+              Add money
             </Button>
+          ) : (
+            <>
+              <Button full size="lg" icon={<IconTrendUp />} onClick={() => setSheet("grow")}>
+                {earnLabel}
+              </Button>
+              <div className="flex gap-3">
+                <Button variant="secondary" full icon={<IconPlus />} onClick={() => setSheet("deposit")}>
+                  Add money
+                </Button>
+                <Button variant="secondary" full icon={<IconArrowDown />} onClick={() => setSheet("withdraw")}>
+                  Withdraw
+                </Button>
+              </div>
+            </>
           )}
         </div>
       </main>
 
       <DepositSheet open={sheet === "deposit"} onClose={close} address={piggyAddress} />
-      <WithdrawSheet open={sheet === "withdraw"} onClose={close} idleBase={balance} owner={piggyAddress} />
+      <WithdrawSheet
+        open={sheet === "withdraw"}
+        onClose={close}
+        availableBase={realWithdrawable}
+        restingBase={resting}
+        earningBase={deployed}
+        onManageEarning={() => setSheet("grow")}
+      />
       <GrowSheet
         open={sheet === "grow"}
         onClose={close}
-        idleWei={idle}
+        restingWei={resting}
         positions={positions}
         onAddMoney={() => setSheet("deposit")}
       />

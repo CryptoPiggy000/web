@@ -14,6 +14,7 @@ interface SimState {
   positions: SimPosition[];
   earnSince: number | null; // mốc tính lãi hiện tại (reset khi harvest)
   harvestedWei: string; // lãi đã harvest (base units), cộng vào tổng hiển thị
+  sandboxWei: string; // tiền nạp qua cổng fiat ở DEV MODE (sim, không rút thật được)
   activity: ActivityEntry[];
 }
 
@@ -23,6 +24,7 @@ const EMPTY: SimState = {
   positions: [],
   earnSince: null,
   harvestedWei: "0",
+  sandboxWei: "0",
   activity: [],
 };
 
@@ -31,6 +33,12 @@ const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 // accrual clock so the balance visibly climbs during a session. Display + harvest
 // both use this, so they stay consistent. (Stated APY labels stay honest.)
 const DEMO_SPEED = 8000;
+// Phí harvest (basis points): 1%. Khớp với việc harvest thật tốn fee.
+const HARVEST_FEE_BPS = 100;
+
+function usd(base: bigint): string {
+  return `$${(Number(base) / 1e6).toFixed(2)}`;
+}
 
 let cache: SimState | null = null;
 const listeners = new Set<() => void>();
@@ -69,57 +77,114 @@ export function useSim() {
     write({ ...s, activity: [entry, ...s.activity].slice(0, 100) });
   }, []);
 
-  const applyPlanSimulation = useCallback(
-    (positions: SimPosition[], summary: string) => {
-      const s = read();
-      const merged = [...s.positions];
-      for (const p of positions) {
-        const existing = merged.find((m) => m.key === p.key);
-        if (existing) {
-          existing.amountWei = (
-            BigInt(existing.amountWei) + BigInt(p.amountWei)
-          ).toString();
-        } else {
-          merged.push(p);
-        }
-      }
-      write({
-        ...s,
-        positions: merged,
-        earnSince: s.earnSince ?? Date.now(),
-        activity: [
-          { ts: Date.now(), type: "plan" as const, summary, simulated: true },
-          ...s.activity,
-        ].slice(0, 100),
-      });
-    },
-    [],
-  );
-
-  const harvest = useCallback(() => {
+  // Resting → Earning: đưa thêm tiền rảnh vào làm việc.
+  const earnMore = useCallback((positions: SimPosition[], summary: string) => {
     const s = read();
     const now = Date.now();
-    const gained = accruedWei(s.positions, s.earnSince, now);
-    if (gained === 0n) return;
+    // Khóa lãi đã cộng dồn lại trước khi đổi vốn (để nó không bị tính lại/tụt lùi).
+    const harvestedWei = (
+      BigInt(s.harvestedWei) + accruedWei(s.positions, s.earnSince, now)
+    ).toString();
+
+    const merged = s.positions.map((p) => ({ ...p }));
+    for (const p of positions) {
+      const existing = merged.find((m) => m.key === p.key);
+      if (existing) {
+        existing.amountWei = (
+          BigInt(existing.amountWei) + BigInt(p.amountWei)
+        ).toString();
+      } else {
+        merged.push({ ...p });
+      }
+    }
     write({
       ...s,
-      harvestedWei: (BigInt(s.harvestedWei) + gained).toString(),
+      positions: merged,
+      harvestedWei,
       earnSince: now,
       activity: [
-        {
-          ts: now,
-          type: "plan" as const,
-          summary: `Harvested $${(Number(gained) / 1e6).toFixed(4)}`,
-          simulated: true,
-        },
+        { ts: now, type: "plan" as const, summary, simulated: true },
         ...s.activity,
       ].slice(0, 100),
     });
   }, []);
 
+  // Earning → Resting: rút vốn (theo tỉ lệ) khỏi các kênh về ví, để rút ra ngoài.
+  // Bước thủ công, tách riêng — pool có thể không trả tức thì (đây là chỗ có độ trễ).
+  const exitToWallet = useCallback((amountWei: bigint) => {
+    const s = read();
+    const now = Date.now();
+    const harvestedWei = (
+      BigInt(s.harvestedWei) + accruedWei(s.positions, s.earnSince, now)
+    ).toString();
+
+    const deployed = s.positions.reduce((a, p) => a + BigInt(p.amountWei), 0n);
+    if (deployed === 0n) return;
+    const cut = amountWei >= deployed ? deployed : amountWei;
+    const remaining = deployed - cut;
+    const positions =
+      remaining === 0n
+        ? []
+        : s.positions
+            .map((p) => ({
+              ...p,
+              amountWei: ((BigInt(p.amountWei) * remaining) / deployed).toString(),
+            }))
+            .filter((p) => BigInt(p.amountWei) > 0n);
+
+    write({
+      ...s,
+      positions,
+      harvestedWei,
+      earnSince: positions.length ? now : null,
+      activity: [
+        { ts: now, type: "withdraw" as const, summary: `Moved ${usd(cut)} to wallet`, simulated: true },
+        ...s.activity,
+      ].slice(0, 100),
+    });
+  }, []);
+
+  // DEV MODE: mô phỏng nạp fiat qua cổng thứ ba (thẻ/PayPal) — cộng vào ví sandbox.
+  const devDeposit = useCallback((amountWei: bigint) => {
+    const s = read();
+    write({
+      ...s,
+      sandboxWei: (BigInt(s.sandboxWei) + amountWei).toString(),
+      activity: [
+        { ts: Date.now(), type: "deposit" as const, summary: `Added ${usd(amountWei)} via card (sandbox)`, simulated: true },
+        ...s.activity,
+      ].slice(0, 100),
+    });
+  }, []);
+
+  // Harvest: thu lãi đã cộng dồn (trừ phí), lãi net cộng vào tổng. Bất cứ lúc nào.
+  const harvest = useCallback((): { gross: bigint; fee: bigint; net: bigint } => {
+    const s = read();
+    const now = Date.now();
+    const gross = accruedWei(s.positions, s.earnSince, now);
+    if (gross === 0n) return { gross: 0n, fee: 0n, net: 0n };
+    const fee = (gross * BigInt(HARVEST_FEE_BPS)) / 10_000n;
+    const net = gross - fee;
+    write({
+      ...s,
+      harvestedWei: (BigInt(s.harvestedWei) + net).toString(),
+      earnSince: now,
+      activity: [
+        {
+          ts: now,
+          type: "plan" as const,
+          summary: `Harvested $${(Number(net) / 1e6).toFixed(4)} (fee $${(Number(fee) / 1e6).toFixed(4)})`,
+          simulated: true,
+        },
+        ...s.activity,
+      ].slice(0, 100),
+    });
+    return { gross, fee, net };
+  }, []);
+
   const reset = useCallback(() => write(EMPTY), []);
 
-  return { ...state, setPreference, addActivity, applyPlanSimulation, harvest, reset };
+  return { ...state, setPreference, addActivity, earnMore, exitToWallet, harvest, devDeposit, reset };
 }
 
 /** Tổng đã "deploy" (mô phỏng), để trừ khỏi idle hiển thị. */
@@ -141,16 +206,6 @@ export function accruedWei(
     const principal = Number(BigInt(p.amountWei));
     const gain = principal * ((p.apy ?? 0) / 100) * years;
     total += BigInt(Math.floor(gain));
-  }
-  return total;
-}
-
-/** USDC/năm mà toàn bộ vị thế đang sinh ra (base units) — dùng cho ticker sống. */
-export function yieldPerYearWei(positions: SimPosition[]): bigint {
-  let total = 0n;
-  for (const p of positions) {
-    const principal = Number(BigInt(p.amountWei));
-    total += BigInt(Math.floor(principal * ((p.apy ?? 0) / 100)));
   }
   return total;
 }

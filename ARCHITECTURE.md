@@ -51,10 +51,26 @@ The contracts are not yet deployed to Sepolia/Base, so the app runs in **Phase 0
 | Planner (risk → allocation) | **Simulated** (mock) | `src/lib/planner.ts` |
 | Earning / yield accrual / harvest | **Simulated** (localStorage) | `src/lib/sim.ts` |
 
-The simulated balance shown = real on-chain USDC + simulated harvested + simulated
+The simulated balance shown = real on-chain USDC + simulated locked yield + simulated
 live-accruing yield. Only the **real USDC** is actually withdrawable. Yield accrual is
 sped up (`DEMO_SPEED` in `sim.ts`) so the balance visibly climbs during a demo; the
 stated APY labels stay honest.
+
+### Two-bucket model (Resting vs Earning)
+
+Money is split into two buckets that the user moves between explicitly:
+
+- **Resting** = `realBalance − earningPrincipal`. In the wallet; the only bucket that
+  is **withdrawable** (real USDC) and **earn-able**.
+- **Earning** = `earningPrincipal` (real USDC notionally at work) + accrued yield (sim).
+
+Transitions: deposit → Resting; "Start earning / Earn more" moves Resting → Earning
+(`earnMore` in `sim.ts`); "Move to wallet" moves Earning → Resting (`exitToWallet`);
+Withdraw pulls from Resting only. To withdraw money that is earning, the user must
+"Move to wallet" first (a deliberate manual step — keeps the two buckets unambiguous).
+This mirrors the real contract path `exit()` (unwind to idle) → `withdraw()` (to owner).
+When contracts land, Earning becomes real on-chain positions and this sim bucket is
+replaced by reads of the account's positions.
 
 `src/lib/sim.ts` (positions, `earnSince`, `harvestedWei`, `accruedWei`,
 `yieldPerYearWei`, `DEMO_SPEED`) is **throwaway** — it exists only until the contracts
@@ -83,10 +99,10 @@ The returned `Plan.actions` is a `PlanAction[]` that mirrors the on-chain **`Act
 struct in `contracts/src/Types.sol`** (kind, positionId, assetIn, assetOut, router,
 amount, minOut, routeData). See `src/lib/types.ts`.
 
-So `backend/` needs to: read on-chain state (balances, registry positions), decide an
-allocation, and return `{ planId, goal, reasoning, targetMix, actions: Action[],
-estCost, expiresAt }`. The frontend feeds `actions` straight into `executePlan` — no
-translation layer in between. Full endpoint list in FLOW.md.
+So `backend/` needs to: read on-chain state, build each operation (earn / harvest /
+withdraw) as an `Action[]` + a gas-sponsored UserOp, hand the client one thing to sign,
+and submit it. The frontend feeds `actions` straight into `executePlan` — no translation
+layer. **Full endpoint contract: [API.md](./API.md)** (also covers fiat on-ramp).
 
 ### 3. executePlan → on-chain (`contracts` + gas sponsorship)
 

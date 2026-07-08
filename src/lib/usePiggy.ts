@@ -1,6 +1,6 @@
 "use client";
 
-import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { useWallets } from "@privy-io/react-auth";
 import { useReadContract } from "wagmi";
 import { erc20Abi, parseAbi, zeroHash } from "viem";
 import { FACTORY_ADDRESS, USDC_ADDRESS } from "./chain";
@@ -15,7 +15,6 @@ const factoryAbi = parseAbi([
  * - Có FACTORY_ADDRESS: heo đất = địa chỉ counterfactual từ predict(owner, 0).
  */
 export function usePiggy() {
-  const { ready, authenticated, user } = usePrivy();
   const { wallets } = useWallets();
 
   const embedded = wallets.find((w) => w.walletClientType === "privy");
@@ -45,13 +44,7 @@ export function usePiggy() {
   });
 
   return {
-    ready,
-    authenticated,
-    user,
-    owner,
     piggyAddress,
     balance: balance.data ?? 0n,
-    balanceLoading: balance.isLoading,
-    refetchBalance: balance.refetch,
   };
 }
