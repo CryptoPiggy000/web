@@ -23,10 +23,10 @@ export const USDC_ADDRESS = USDC_BY_CHAIN[activeChain.id];
 export const USDC_DECIMALS = 6;
 
 /**
- * Cổng nạp fiat (thẻ/PayPal). Chưa có backend/provider thật → DEV MODE mô phỏng
- * checkout và cộng tiền sandbox để test flow. Đặt NEXT_PUBLIC_ONRAMP_URL để tắt.
+ * Cổng nạp fiat (thẻ/PayPal). On-ramp thật đi qua backend engine (POST /onramp/session).
+ * Chưa cấu hình backend (NEXT_PUBLIC_API_URL trống) → DEV: mô phỏng checkout + cộng sandbox.
  */
-export const ONRAMP_DEV = !process.env.NEXT_PUBLIC_ONRAMP_URL;
+export const ONRAMP_DEV = !process.env.NEXT_PUBLIC_API_URL;
 
 export const explorerUrl =
   activeChain.blockExplorers?.default.url ?? "https://etherscan.io";
