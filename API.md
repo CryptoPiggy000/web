@@ -150,6 +150,12 @@ After it settles (poll `GET /operations/:id` → `confirmed`), the amount shows 
     "to": "0xExternal…", "feeBase": "0" },
   "actions": [ … ], "toSign": { "type": "userOpHash", "value": "0x…" } }
 ```
+**Contract note (for the engine):** `SmartInvestmentAccount.withdraw(token, amount)` sends
+to the **owner EOA only** — it has no external-address param. So for `to ≠ owner`, the op
+must be **two steps batched in one UserOp**: `account.withdraw(usdc, amount)` (account →
+owner) then ERC-20 `transfer(to, amount)` (owner → external). For `to == owner`, a single
+`withdraw` suffices. (Phase 0 client does a raw ERC-20 transfer from the EOA since funds
+already sit there.)
 
 ### Submit — `POST /operations/:id/submit`
 ```jsonc
@@ -226,7 +232,7 @@ target regions early — it drives provider choice.
   { "id": "act_…", "ts": 1749980000000, "type": "harvest",  "summary": "Harvested $0.49",        "txHash": "0x…" },
   { "id": "act_…", "ts": 1749970000000, "type": "withdraw", "summary": "Withdrew $8.00",         "txHash": "0x…" }
 ] }
-// type ∈ onramp | deposit | earn | harvest | withdraw
+// type ∈ onramp | deposit | earn | harvest | exit | withdraw   (exit = close position)
 ```
 
 ---

@@ -65,10 +65,11 @@ Money is split into two buckets that the user moves between explicitly:
 - **Earning** = `earningPrincipal` (real USDC notionally at work) + accrued yield (sim).
 
 Transitions: deposit → Resting; "Start earning / Earn more" moves Resting → Earning
-(`earnMore` in `sim.ts`); "Move to wallet" moves Earning → Resting (`exitToWallet`);
-Withdraw pulls from Resting only. To withdraw money that is earning, the user must
-"Move to wallet" first (a deliberate manual step — keeps the two buckets unambiguous).
-This mirrors the real contract path `exit()` (unwind to idle) → `withdraw()` (to owner).
+(`earnMore` in `sim.ts`); **Harvest** collects interest → Resting (`harvest`, with fee);
+**Close position** moves earning principal → Resting (`exitToWallet`, may be async);
+Withdraw pulls from Resting only. To withdraw money that is earning, the user must Close a
+position first (deliberate manual step — pool release isn't instant). This mirrors the real
+contract path `exit()` (unwind to idle) → `withdraw()` (to owner).
 When contracts land, Earning becomes real on-chain positions and this sim bucket is
 replaced by reads of the account's positions.
 
@@ -93,13 +94,13 @@ address. The frontend already knows how to derive and fund the counterfactual ac
 
 ### 2. Planner API → Plan (`backend`)
 
-`src/lib/planner.ts` `previewPlan(idle, preference)` currently returns a **mock** Plan.
-It has the **same interface** the backend should implement as `POST /plans/preview`.
-The returned `Plan.actions` is a `PlanAction[]` that mirrors the on-chain **`Action`
-struct in `contracts/src/Types.sol`** (kind, positionId, assetIn, assetOut, router,
-amount, minOut, routeData). See `src/lib/types.ts`.
+`src/lib/planner.ts` `previewPlan(idle, preference)` currently returns a **mock** Plan
+(the strategy allocation + `Action[]`). In production this is served by the backend as
+`GET /market/strategies` (the options) + `POST /operations/earn` (the built op). The
+returned `PlanAction[]` mirrors the on-chain **`Action` struct in `contracts/src/Types.sol`**
+(kind, positionId, assetIn, assetOut, router, amount, minOut, routeData). See `src/lib/types.ts`.
 
-So `backend/` needs to: read on-chain state, build each operation (earn / harvest /
+So `backend/` needs to: read on-chain state, build each operation (earn / harvest / exit /
 withdraw) as an `Action[]` + a gas-sponsored UserOp, hand the client one thing to sign,
 and submit it. The frontend feeds `actions` straight into `executePlan` — no translation
 layer. **Full endpoint contract: [API.md](./API.md)** (also covers fiat on-ramp).
@@ -117,8 +118,8 @@ unchanged — no contract changes needed for gas sponsorship.
 ```
 src/lib/chain.ts        chain + USDC + factory config (Sepolia / Base)
 src/lib/types.ts        Preference, Plan, PlanAction (Action mirrors Types.sol)
-src/lib/planner.ts      planner client — Phase 0 mock == future POST /plans/preview
-src/lib/sim.ts          Phase 0 simulation store (throwaway): earning, yield, harvest
+src/lib/planner.ts      earn strategies — Phase 0 mock == future /market/strategies + /operations/earn
+src/lib/sim.ts          Phase 0 simulation store (throwaway): earn, yield, harvest, close, sandbox fiat
 src/lib/usePiggy.ts     piggy address + USDC balance (embedded EOA now, predict() later)
 src/lib/format.ts       dollar / address / time formatting
 src/components/button.tsx        shared Button (variants/sizes/icon) — used app-wide
@@ -134,10 +135,13 @@ src/app/app/page.tsx    the single home screen
 - **Single screen, no tabs.** Everything is the home screen + bottom sheets.
 - **Balance is the hero** — big, centred, live-ticking upward as yield accrues, framed
   over a large piggy watermark.
-- **Earn-first flow.** The primary CTA is "Start earning"/"Earn more". "Add money" is a
-  step *inside* that flow (the Earn sheet gates to deposit when there's no capital).
-  Harvest lives there too. Withdraw is a deliberately quiet secondary link (kept visible
-  for the non-custodial "your money, leave anytime" promise).
+- **Home actions by state.** Empty → one big "Add money". Funded → primary "Earn" +
+  a secondary row "Add money · Withdraw" (both always reachable). The split
+  "In wallet · Earning" shows when earning.
+- **Earn sheet is tabbed.** "Earn money" (deploy resting into a strategy) and "Your
+  positions" (Harvest interest → wallet with a fee; Close position = unwind principal,
+  may be async). Withdraw (wallet → external) is a separate sheet, manual/resting-only —
+  close a position first to withdraw earning money (pool release isn't instant).
 - **Shared `Button`** is the one button primitive for the whole app (variants, sizes,
   icons). Reuse it; don't hand-roll button classes.
 - **Motion**: sheets slide up + fade, balance counts up on deposit and ticks up on

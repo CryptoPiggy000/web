@@ -2,7 +2,7 @@ import type { Plan, PlanAction, Preference, RiskTolerance, TargetSlice } from ".
 
 /**
  * Planner client. Phase 0: mock chạy phía client, cùng interface với backend tương lai
- * (POST /plans/preview). Khi backend sẵn sàng chỉ thay thân hàm này bằng fetch.
+ * (GET /market/strategies + POST /operations/earn). Khi backend sẵn sàng thay bằng fetch.
  */
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const;

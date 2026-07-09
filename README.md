@@ -16,14 +16,16 @@ Docs:
 
 ## Status — Phase 0
 
-Runs today on Base Sepolia with **no dependency on the contracts/backend repos**:
+Runs today on **Ethereum Sepolia** with **no dependency on the contracts/backend repos**:
 
-- Real: Privy login (email/Google) + embedded wallet, native ETH deposit (QR + balance polling),
-  native ETH withdraw, activity log.
-- Simulated: the planner (client-side mock with the same interface as the future backend
-  `POST /plans/preview`) and plan execution (positions stored in localStorage).
-- Piggy address = the embedded wallet itself. When `AccountFactory` is deployed on Base, set
+- Real: Privy login (email/Google) + embedded wallet, **USDC** deposit (QR + balance polling)
+  and withdraw, activity.
+- Simulated (localStorage, `src/lib/sim.ts`): the earn strategies/planner, yield accrual,
+  harvest, and close-position. Fiat on-ramp (card/PayPal) has a **dev sandbox** that simulates
+  the checkout.
+- Piggy address = the embedded wallet itself. When `AccountFactory` is deployed, set
   `NEXT_PUBLIC_FACTORY_ADDRESS` and the app switches to the counterfactual address via `predict()`.
+- Single screen + bottom sheets (no sub-routes). Two-bucket money model (Resting / Earning).
 
 ## Run
 
@@ -36,10 +38,11 @@ npm run dev                  # http://localhost:3000
 ## Structure
 
 ```
-src/lib/chain.ts      chain + factory config (Base / Base Sepolia)
-src/lib/types.ts      Plan/Action types (Action mirrors contracts/src/Types.sol)
-src/lib/planner.ts    planner client — Phase 0 mock, future: backend API
-src/lib/sim.ts        Phase 0 simulation store (localStorage)
-src/lib/usePiggy.ts   piggy address + balance hook (EOA now, predict() later)
-src/app/              landing + /app: dashboard, deposit, plan, withdraw, activity, settings
+src/lib/chain.ts        chain + USDC + factory config (Sepolia dev / Base prod)
+src/lib/types.ts        Preference / Plan / PlanAction (Action mirrors contracts/src/Types.sol)
+src/lib/planner.ts      earn strategies — Phase 0 mock (future: backend /market/strategies + /operations/earn)
+src/lib/sim.ts          Phase 0 simulation store: earn / harvest / close / sandbox fiat (throwaway)
+src/lib/usePiggy.ts     piggy address + USDC balance (EOA now, predict() later)
+src/components/         Button, sheets (deposit/withdraw/grow/settings), balance-card, hero-balance
+src/app/app/page.tsx    the single home screen
 ```

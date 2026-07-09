@@ -103,7 +103,7 @@ export function useSim() {
       harvestedWei,
       earnSince: now,
       activity: [
-        { ts: now, type: "plan" as const, summary, simulated: true },
+        { ts: now, type: "earn" as const, summary, simulated: true },
         ...s.activity,
       ].slice(0, 100),
     });
@@ -138,7 +138,7 @@ export function useSim() {
       harvestedWei,
       earnSince: positions.length ? now : null,
       activity: [
-        { ts: now, type: "withdraw" as const, summary: `Moved ${usd(cut)} to wallet`, simulated: true },
+        { ts: now, type: "exit" as const, summary: `Closed ${usd(cut)} to wallet`, simulated: true },
         ...s.activity,
       ].slice(0, 100),
     });
@@ -151,7 +151,7 @@ export function useSim() {
       ...s,
       sandboxWei: (BigInt(s.sandboxWei) + amountWei).toString(),
       activity: [
-        { ts: Date.now(), type: "deposit" as const, summary: `Added ${usd(amountWei)} via card (sandbox)`, simulated: true },
+        { ts: Date.now(), type: "onramp" as const, summary: `Added ${usd(amountWei)} via card (sandbox)`, simulated: true },
         ...s.activity,
       ].slice(0, 100),
     });
@@ -172,7 +172,7 @@ export function useSim() {
       activity: [
         {
           ts: now,
-          type: "plan" as const,
+          type: "harvest" as const,
           summary: `Harvested $${(Number(net) / 1e6).toFixed(4)} (fee $${(Number(fee) / 1e6).toFixed(4)})`,
           simulated: true,
         },

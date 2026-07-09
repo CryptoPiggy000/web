@@ -1,169 +1,169 @@
-# CryptoPiggy Web — Product Flow
+# CryptoPiggy — Product Flow
 
-Blueprint cho webapp Next.js. Nguyên tắc xuyên suốt: **người dùng không cần biết crypto là gì** — không seed phrase, không gas, không popup hex. Non-custodial tuyệt đối: mọi lệnh di chuyển tiền do chính ví user ký (`onlyOwner` trên `SmartInvestmentAccount`).
+Blueprint UX cho web/mobile. Nguyên tắc xuyên suốt: **người dùng không cần biết gì về
+crypto** — không seed phrase, không gas, không chọn chain/token, không popup hex.
+Non-custodial tuyệt đối: mọi lệnh di chuyển tiền do chính ví user ký (`onlyOwner` trên
+`SmartInvestmentAccount`).
 
-## Stack quyết định
+> **API contract chuẩn ở [API.md](./API.md)** — đây là nguồn sự thật cho backend/engine.
+> Kiến trúc + real-vs-sim ở [ARCHITECTURE.md](./ARCHITECTURE.md). File này chỉ mô tả **luồng
+> UX**. Nếu có mâu thuẫn, API.md/ARCHITECTURE.md thắng.
 
-| Lớp | Lựa chọn | Ghi chú |
-|---|---|---|
-| Frontend | Next.js + TypeScript + wagmi/viem | viem đã được dùng trong `contracts/demo` |
-| Ví | Privy embedded wallet (đăng nhập Google/email) | 2-of-3 Shamir shares, non-custodial |
-| Gas | EIP-7702 smart EOA + paymaster (Pimlico/Alchemy) | User không bao giờ cần ETH; `msg.sender` vẫn là owner nên contract giữ nguyên |
-| Chain | **Base** (dev trên Base Sepolia) | Ẩn hoàn toàn khỏi user — không có bước chọn chain/token; user chỉ nạp ETH native |
-| Engine | Backend API trả Plan = `Action[]` | Chưa build — Phase 0 mock phía client như demo |
+## Quyết định
 
-## Trạng thái người dùng (state machine)
+| Lớp | Lựa chọn |
+|---|---|
+| Đồng tiền | **USDC** (đô-la ổn định — không biến động giá). Ẩn hoàn toàn khái niệm chain/token khỏi user. |
+| Ví | Privy embedded wallet (đăng nhập Google/email), 2-of-3 shares, non-custodial |
+| Gas | EIP-7702 smart EOA + paymaster — user **không bao giờ cần ETH**; `msg.sender` vẫn là owner nên contract giữ nguyên |
+| Nạp tiền | **Fiat (thẻ/PayPal qua cổng thứ ba → USDC)** hoặc gửi USDC vào địa chỉ heo đất |
+| Frontend | Next.js + TS + wagmi/viem. **Một màn hình duy nhất + bottom sheets** (KHÔNG đa tab) |
+| Engine | Backend trả các **operation** đã build sẵn `Action[]` + UserOp sponsor gas (xem API.md) |
+
+## Mô hình tiền — HAI TÚI (quan trọng nhất)
+
+Tiền của user chia làm hai túi, mọi thao tác là chuyển giữa hai túi:
+
+- **Trong ví (Resting)** = USDC đang rảnh. Túi này **rút được** và **đem đi earn được**.
+- **Đang earn (Earning)** = vốn đang làm việc trong pool + lãi cộng dồn.
+
+`Resting = USDC thật − vốn đang earn`. `Total = Resting + Earning`.
+
+## Trạng thái người dùng
 
 ```mermaid
 stateDiagram-v2
-    S0: Khách (chưa đăng nhập)
-    S1: Có ví, chưa có heo đất on-chain
-    S2: Heo đất có tiền nhàn rỗi (idle)
-    S3: Tiền đang sinh lời (deployed)
+    S0: Chưa đăng nhập
+    S1: Có ví, heo đất trống
+    S2: Có tiền trong ví (Resting)
+    S3: Đang earn (Earning)
 
     S0 --> S1: Đăng nhập Google/email (Privy tạo ví + predict địa chỉ)
-    S1 --> S2: Nạp USDC vào địa chỉ heo đất (counterfactual)
-    S2 --> S3: Duyệt Plan → ký executePlan (kèm createAccount lần đầu)
-    S3 --> S2: Exit một phần / lãi về idle
-    S3 --> S3: Rebalance theo Plan mới
-    S2 --> S0: Rút hết + đăng xuất
+    S1 --> S2: Nạp tiền — fiat (thẻ/PayPal) hoặc USDC on-chain
+    S2 --> S3: Earn — chọn chiến lược, ký executePlan
+    S3 --> S2: Close position (gỡ vốn về ví, có thể chờ pool) · Harvest (lãi về ví)
+    S2 --> S0: Rút ra ngoài + đăng xuất
 ```
 
-Điểm kỹ thuật then chốt: địa chỉ heo đất được tính trước bằng `AccountFactory.predict(owner, salt)` (CREATE2). **User nạp tiền được trước khi account deploy** — token ERC-20 gửi vào địa chỉ counterfactual nằm chờ, deploy xong account sở hữu luôn. `createAccount` được batch chung với `executePlan` đầu tiên trong một UserOp 7702 (một lần ký, gas do ta tài trợ).
+Kỹ thuật: địa chỉ heo đất tính trước bằng `AccountFactory.predict(owner, salt)` (CREATE2).
+User nạp được **trước khi account deploy**; `createAccount` batch chung với `executePlan`
+đầu tiên trong một UserOp 7702 (một lần ký, gas ta tài trợ).
 
-## Sơ đồ màn hình (routes)
+## Màn hình
+
+**MỘT màn hình chính** (`/app`) + các bottom sheet. Không có route con.
 
 ```
-/                     Landing — giá trị sản phẩm, "Bắt đầu tiết kiệm"
-/app                  Dashboard (portfolio) — màn hình trung tâm
-/app/deposit          Nạp tiền — địa chỉ + QR, trạng thái chờ nhận
-/app/plan             Preference → Plan preview → Thực hiện
-/app/withdraw         Rút tiền
-/app/activity         Lịch sử giao dịch
-/app/settings         Tài khoản, export key, recovery
+/            Landing — "A piggy bank for crypto"
+/app         Home: số dư (hero, sống) + split "Trong ví · Đang earn" + hành động
+             ├─ sheet: Add money   (fiat / crypto)
+             ├─ sheet: Earn        (2 tab: Earn money · Your positions)
+             ├─ sheet: Withdraw    (ví → ngoài)
+             └─ sheet: Settings    (tài khoản, export key)
 ```
 
-Đăng nhập bằng Privy modal (không có trang /login riêng). Route `/app/*` guard bằng session.
+Nút trên Home theo trạng thái: heo trống → **Add money** (to). Có tiền → **Earn** (chính) +
+hàng phụ **Add money · Withdraw**.
 
-## Flow 1 — Onboarding (mục tiêu: dưới 60 giây tới lúc thấy địa chỉ nạp)
+## Flow 1 — Onboarding (mục tiêu <30s tới màn hình chính)
 
-1. Landing → **"Bắt đầu"** → Privy modal: Google / email OTP.
-2. Ngầm phía sau, không hiện gì cho user:
-   - Privy sinh embedded wallet (EOA), tách 3 shares.
-   - Ký EIP-7702 authorization (chữ ký off-chain, một lần).
-   - Gọi `factory.predict(ownerAddress, salt)` → địa chỉ heo đất.
-   - `POST /auth/verify` với Privy token → backend tạo user record.
-3. Màn chào: **"Heo đất của bạn đã sẵn sàng"** + địa chỉ + QR.
-4. **Preference quiz** — 3 câu, ngôn ngữ đời thường:
-   - Mục tiêu: tích lũy dài hạn / lãi ổn định / thử cho biết
-   - Chịu biến động: không / một chút / thoải mái
-   - Kỳ hạn dự kiến: <6 tháng / 6–24 tháng / >2 năm
-   - → `PUT /me/preference`. Có nút "để sau" (mặc định hồ sơ an toàn nhất).
-5. Đích: `/app/deposit`.
+1. Landing → **Get started** → Privy modal: Google / email OTP.
+2. Ngầm phía sau: Privy sinh embedded wallet + tách shares; ký 7702 authorization (một lần);
+   `factory.predict(owner, salt)` → địa chỉ heo đất; `POST /auth/verify` → session.
+3. Vào thẳng Home. **Không có quiz preference** — khẩu vị được chọn ngay tại bước Earn.
 
-## Flow 2 — Nạp tiền
+## Flow 2 — Add money (nạp tiền)
 
-Đơn giản hóa tối đa: user chỉ nạp **ETH native trên Base** — không chọn chain, không chọn token. Mọi chuyển đổi sang tài sản sinh lời là việc của engine ở bước Plan.
+Sheet có **hai lựa chọn**:
 
-1. Hiện địa chỉ heo đất + QR, kèm cảnh báo rõ: chỉ gửi ETH trên mạng Base.
-2. FE poll `balanceOf(accountAddress)` (hoặc backend đẩy qua websocket sau này) → khi tiền vào: trạng thái **"Đã nhận X USDC 🎉"**.
-3. Ngay khi có idle balance → CTA sang Flow 3: *"Cho tiền đi làm việc?"*.
-4. Phase sau: tích hợp onramp (mua USDC bằng VND) — ngoài scope MVP.
+- **Card or PayPal (fiat):** user nhập số tiền USD → `POST /onramp/session` → mở checkout
+  hosted của cổng thứ ba (MoonPay/Transak/…). Cổng lo KYC + thanh toán, gửi **USDC thẳng
+  vào địa chỉ heo đất**. Ta không bao giờ chạm thông tin thẻ. Tiền vào → hiện như nạp thường.
+- **I already have crypto:** hiện địa chỉ + QR, user gửi USDC vào. FE poll `balanceOf` (5s).
 
-## Flow 3 — Plan & Execute (vòng lặp cốt lõi)
+Nạp xong tiền nằm ở túi **Trong ví (Resting)**.
+
+## Flow 3 — Earn (cho tiền sinh lời)
+
+Sheet Earn có **2 tab**:
+
+**Tab "Earn money"** — deploy tiền rảnh:
+1. Hiện số tiền rảnh; chọn 1 trong 3 chiến lược: **Safe / Balanced / Higher yield** (mỗi cái
+   một con số APY — vì là USDC nên chỉ khác nhau ở nguồn lãi, không có rủi ro giá).
+2. Xem phân bổ (Aave / stable-yield vault) + lãi ước tính/năm.
+3. Bấm **Start earning** = ký một operation.
 
 ```mermaid
 sequenceDiagram
     actor U as User
-    participant FE as Web (Next.js)
-    participant BE as Backend (engine)
+    participant FE as Client
+    participant BE as Backend/Engine
     participant PM as Bundler/Paymaster
-    participant C as Contracts (L2)
+    participant C as Contracts
 
-    U->>FE: Bấm "Đầu tư ngay"
-    FE->>BE: POST /plans/preview (preference + địa chỉ account)
-    BE->>C: Đọc state (balances, positions, registry)
-    BE-->>FE: Plan {goal, reasoning, targetMix, actions[], estCost}
-    FE->>U: Preview tiếng người: mix %, từng bước, lợi suất dự kiến
-    U->>FE: Bấm "Thực hiện"
-    FE->>FE: Privy ký UserOp (silent) — batch [createAccount?] + executePlan(actions)
-    FE->>PM: Gửi UserOp (gas do CryptoPiggy tài trợ)
-    PM->>C: Submit on-chain
-    C-->>FE: Events Deposited/Swapped...
-    FE->>BE: POST /plans/:id/executed (txHash)
-    FE->>U: "Xong! Tiền của bạn đang sinh lời" → /app
+    U->>FE: Chọn chiến lược → Start earning
+    FE->>BE: POST /operations/earn {amount, strategy}
+    BE-->>FE: {preview, actions[], toSign}   (gas đã sponsor)
+    FE->>FE: Privy ký toSign (silent)
+    FE->>BE: POST /operations/:id/submit {signature}
+    BE->>PM: Gửi UserOp (paymaster trả gas)
+    PM->>C: executePlan(actions) on-chain
+    BE-->>FE: {status, txHash}
+    FE->>U: "Now earning" (success đồng bộ)
 ```
 
-Chi tiết màn **Plan preview** — đây chính là màn "xác nhận giao dịch", thay thế popup ví:
-- Mục tiêu + lý do của engine, viết bằng ngôn ngữ thường ("Vì bạn chọn an toàn, 70% vào kênh lãi ổn định…").
-- Target mix (biểu đồ) + bảng từng bước (mỗi `Action` dịch thành câu: "Gửi 400.000đ giá trị USDC vào Aave").
-- Nút **Thực hiện** = ký. Không hiện calldata; có mục "chi tiết kỹ thuật" thu gọn cho ai muốn xem.
-- Plan có TTL: nếu preview quá X phút → tự refetch trước khi ký (quote swap có thể cũ; `minOut` trong Action là chốt chặn on-chain).
+**Tab "Your positions"** — quản lý tiền đang earn:
+- Hiện **lãi đang chạy** (live) + APY.
+- **Harvest interest** — thu **lãi**, tự về **ví (Resting)**, có phí (`POST /operations/harvest`).
+- **Close position** (gỡ vị thế) — rút **vốn gốc** khỏi pool về ví (`POST /operations/exit`).
+  **Có thể không tức thì** (pool có queue/cooldown) → đây là lý do nó tách riêng khỏi Withdraw.
 
-## Flow 4 — Dashboard (portfolio)
+## Flow 4 — Withdraw (rút ra ngoài) — THỦ CÔNG
 
-- **Tổng giá trị** heo đất (headline) + biến động.
-- Split ba bucket như demo: **Idle / Held / Earning** — mỗi holding gắn nhãn kênh (Aave, Vault…).
-- Preference hiện tại + nút sửa (sửa xong gợi ý re-plan).
-- Nudge thông minh: có idle ≥ ngưỡng → "Bạn có X USDC chưa sinh lời"; lệch target mix → gợi ý rebalance.
-- Nguồn dữ liệu: đọc on-chain trực tiếp (viem multicall: `balanceOf`, `convertToAssets`, aave supplied) — không phụ thuộc backend để hiển thị tiền. Backend chỉ bổ sung APY/metadata.
+Sheet hiện breakdown rõ: **Available to withdraw** (trong ví) và **Still earning**.
 
-## Flow 5 — Rút tiền
+1. Nhập địa chỉ ngoài + số tiền (≤ phần trong ví).
+2. Confirm → ERC-20 transfer USDC ra địa chỉ đó (`POST /operations/withdraw`).
 
-Một màn duy nhất: nhập **số tiền** + chọn đích (**ví heo đất → địa chỉ ngoài** hoặc chỉ về idle).
+**Chỉ rút được phần trong ví.** Muốn rút tiền đang earn → phải **Close position** trước
+(Flow 3), đợi pool trả về ví, rồi mới rút. Withdraw **không** tự gỡ vị thế — vì pool có thể
+không hoàn trả ngay, nên hai bước phải tách bạch.
 
-Phía sau, FE/engine tự dựng chuỗi và batch thành **một lần ký**:
-1. Nếu idle không đủ → `Action[]` WITHDRAW từ positions (rút từ kênh lãi thấp nhất trước — engine quyết).
-2. `withdraw(token, amount)` → về ví owner (embedded EOA).
-3. Nếu đích là địa chỉ ngoài → ERC-20 `transfer` từ EOA (batch được trong cùng UserOp 7702).
+## Flow 5 — Home / Portfolio
 
-Luôn hiển thị trước: tổng nhận được, các bước, cảnh báo nếu phải thoát vị thế sớm. `exit()` status-independent — kể cả protocol bị disable trong Registry thì rút vẫn chạy (bảo chứng thiết kế của contracts).
+- **Số dư tổng** (hero, số chạy sống theo lãi). Nền là hình heo đất.
+- Dòng split: **Trong ví $X · Đang earn $Y** (chỉ hiện khi đang earn).
+- Trạng thái: "Growing at ≈X%/yr" / "Feed your piggy to start".
+- Nguồn dữ liệu: `GET /me/portfolio` (buckets + positions + APY). Số dư USDC cũng đọc được
+  thẳng on-chain — **xem tiền và rút tiền không phụ thuộc backend**.
 
-## Flow 6 — Lịch sử
+## Flow 6 — Activity & Settings
 
-- Nguồn 1 (on-chain, không cần backend): events `Deposited`, `Withdrawn`, `Swapped`, `WithdrawnToOwner` của account.
-- Nguồn 2 (backend): plan history — mỗi lần execute lưu plan + lý do → user xem lại "tại sao hồi đó hệ thống đề xuất vậy".
-- Mỗi dòng có link block explorer (mục "chi tiết kỹ thuật").
-
-## Flow 7 — Settings
-
-- Hồ sơ đăng nhập (email/Google), đăng xuất.
-- **Xuất private key** (UI của Privy, app không chạm key) — bằng chứng self-custody, kèm giải thích.
-- Thiết lập recovery (mật khẩu khôi phục / cloud backup) + cảnh báo "mất email = mất ví nếu không có recovery".
-- Thông tin mạng/contract (cho user kỹ tính).
+- **Activity** (`GET /me/activity`): onramp / deposit / earn / harvest / withdraw, mỗi dòng
+  link explorer.
+- **Settings**: email đăng nhập, đăng xuất, **export private key** (UI Privy, app không chạm
+  key — bằng chứng self-custody), địa chỉ/mạng.
 
 ## Xử lý lỗi & edge cases
 
 | Tình huống | Hành vi |
 |---|---|
-| Tx revert | Decode custom errors (`SwapFailed`, `InsufficientOutput`, `PositionNotActive`…) → thông điệp tiếng Việt + hành động gợi ý (thử lại / plan mới) |
-| Plan cũ (giá đổi) | Refetch plan trước khi ký nếu quá TTL; `minOut` bảo vệ tầng cuối |
-| Paymaster hết quota / từ chối | Thông báo "hệ thống đang bận, thử lại sau ít phút" + alert nội bộ |
-| Nạp sai mạng / sai token | Cảnh báo đậm ở màn deposit; hướng dẫn recovery thủ công (docs) |
-| User đóng tab giữa lúc pending | Trạng thái tx lưu backend + đọc lại từ chain khi quay lại |
-| Backend chết | Dashboard + rút tiền vẫn chạy (đọc/ghi on-chain trực tiếp); chỉ planner tê liệt |
+| Operation revert | Decode custom errors (`SwapFailed`, `InsufficientOutput`, `PositionNotActive`…) → thông điệp thường + gợi ý thử lại |
+| Operation hết hạn (`operation_expired`) | Re-build trước khi ký |
+| Paymaster hết quota | "Hệ thống đang bận, thử lại sau" + alert nội bộ |
+| Close position chưa về | Hiện `resting.pendingBase` = "đang về"; withdraw phần đã về |
+| Nạp sai mạng/token | Cảnh báo đậm ở màn Add money (crypto) |
+| Backend/engine chết | Xem số dư + rút USDC vẫn chạy (đọc/ghi on-chain trực tiếp); chỉ planner/earn tê liệt |
 
-Nguyên tắc: **xem tiền và rút tiền không bao giờ được phụ thuộc backend** — đúng tinh thần non-custodial.
+Nguyên tắc: **xem tiền và rút tiền không bao giờ phụ thuộc backend**.
 
-## API contract đề xuất cho backend (cần Vũ confirm)
+## Lộ trình
 
-```
-POST /auth/verify            {privyToken} → session (JWT)
-GET  /me/preference          → {goal, riskTolerance, horizon}
-PUT  /me/preference          {goal, riskTolerance, horizon}
-POST /plans/preview          {account, mode: deploy|rebalance|exit, amount?}
-                             → {planId, goal, reasoning, targetMix[],
-                                actions: Action[], estCost, expiresAt}
-POST /plans/:id/executed     {txHash}
-GET  /me/activity            → merged plan history
-GET  /market/positions       → positions từ Registry + APY + tên hiển thị
-```
-
-`Action` giữ nguyên struct trong `contracts/src/Types.sol` (kind, positionId, assetIn/Out, router, amount, minOut, routeData) — backend trả đúng thứ FE đưa thẳng vào `executePlan`.
-
-## Lộ trình build
-
-- **Phase 0 — chạy trên Base Sepolia, không cần contracts (bây giờ):** scaffold Next.js; Privy thật; **địa chỉ heo đất = chính ví embedded** (khi factory deploy lên Base thì bật `NEXT_PUBLIC_FACTORY_ADDRESS` để chuyển sang `predict()` — code sẵn cả hai nhánh); nạp/rút ETH native là thật; planner **mock phía client**, execute ở chế độ mô phỏng. Không đụng vào repo contracts/backend.
-- **Phase 1 — backend thật:** thay mock planner bằng API (contract ở trên); thêm session auth.
-- **Phase 2 — testnet (Base Sepolia):** bật 7702 + Pimlico paymaster thật; deploy contracts lên testnet (việc của Vũ); test e2e flow gasless.
-- **Phase 3 — polish & mainnet-gating:** onramp, notifications, audit contracts (điều kiện tiên quyết của Vũ trước mainnet).
+- **Phase 0 (hiện tại):** Next.js + Privy thật; địa chỉ heo đất = ví embedded (bật
+  `NEXT_PUBLIC_FACTORY_ADDRESS` để chuyển sang `predict()`); nạp/rút USDC thật trên testnet;
+  planner + earn/harvest/close mô phỏng client (`src/lib/sim.ts`); on-ramp fiat có **dev
+  sandbox** mô phỏng checkout. Không đụng repo contracts/backend.
+- **Phase 1 (backend/engine):** thay mock bằng API.md thật (`NEXT_PUBLIC_API_URL` → backend
+  Worker); session auth.
+- **Phase 2 (testnet):** 7702 + paymaster thật; contracts + on-ramp provider thật; e2e gasless.
+- **Phase 3:** notifications, mainnet (sau audit contracts của Vũ).

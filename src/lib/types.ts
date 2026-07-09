@@ -34,7 +34,7 @@ export interface TargetSlice {
   key: string;
   name: string;
   percent: number;
-  apy?: number; // %/năm, undefined = không sinh lãi (giữ ETH)
+  apy?: number; // %/năm, undefined = không sinh lãi
 }
 
 export interface Plan {
@@ -47,7 +47,7 @@ export interface Plan {
   expiresAt: number;
 }
 
-/** Vị thế mô phỏng Phase 0 (sẽ thay bằng đọc on-chain khi có contracts trên Base) */
+/** Vị thế mô phỏng Phase 0 (sẽ thay bằng đọc on-chain khi có contracts) */
 export interface SimPosition {
   key: string;
   name: string;
@@ -55,9 +55,10 @@ export interface SimPosition {
   apy?: number;
 }
 
+// Khớp với API.md GET /me/activity type ∈ onramp|deposit|earn|harvest|exit|withdraw
 export interface ActivityEntry {
   ts: number;
-  type: "plan" | "deposit" | "withdraw";
+  type: "onramp" | "deposit" | "earn" | "harvest" | "exit" | "withdraw";
   summary: string;
   txHash?: string;
   simulated?: boolean;
