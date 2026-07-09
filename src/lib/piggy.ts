@@ -327,12 +327,14 @@ function useChainView(): PiggyView {
     await activate();
     const code = await publicClient?.getBytecode({ address: piggyAddress });
     if (!code || code === "0x") {
-      await writeContractAsync({
+      const hash = await writeContractAsync({
         address: FACTORY_ADDRESS!,
         abi: factoryAbi,
         functionName: "createAccount",
         args: [ZERO_SALT],
       });
+      // Wait until it's mined — the next executePlan needs the account to exist on-chain.
+      await publicClient?.waitForTransactionReceipt({ hash });
     }
   }, [piggyAddress, publicClient, writeContractAsync, activate]);
 
