@@ -92,26 +92,28 @@ Three switches turn Phase 0 into the real thing. None require rewriting the UI.
 So `contracts/` needs to: deploy `AccountFactory` to the target chain and give us the
 address. The frontend already knows how to derive and fund the counterfactual account.
 
-### 2. Planner API → Plan (`backend`)
+### 2. The engine is a *suggestion* layer (optional, drop-in)
 
-`src/lib/planner.ts` `previewPlan(idle, preference)` currently returns a **mock** Plan
-(the strategy allocation + `Action[]`). In production this is served by the backend as
-`GET /market/strategies` (the options) + `POST /operations/earn` (the built op). The
-returned `PlanAction[]` mirrors the on-chain **`Action` struct in `contracts/src/Types.sol`**
-(kind, positionId, assetIn, assetOut, router, amount, minOut, routeData). See `src/lib/types.ts`.
+Per the architecture (Vũ): **the engine only suggests an allocation — it never moves funds,
+and the app runs full without it.** The user picks an allocation (from the suggested
+strategies or their own), the **client** builds the `Action[]`, and the user signs
+`executePlan` themselves. `src/lib/planner.ts` `optionSummary` is exactly this: static
+suggested strategies that mirror the engine's `GET /market/strategies`. When the engine is
+present it just returns smarter/personalized suggestions — a drop-in, no core change.
 
-So `backend/` needs to: read on-chain state, build each operation (earn / harvest / exit /
-withdraw) as an `Action[]` + a gas-sponsored UserOp, hand the client one thing to sign,
-and submit it. The frontend feeds `actions` straight into `executePlan` — no translation
-layer. **Full endpoint contract: [API.md](./API.md)** (also covers fiat on-ramp).
+The optional `/operations/*` endpoints (API.md §3) let the engine *pre-build* a
+gas-sponsored op when building the `Action[]` needs smarts (swap routing, `minOut`,
+rebalancing). Not required — the client can build the op itself. **Full contract:
+[API.md](./API.md)** (also fiat on-ramp, which IS a real backend need — provider keys).
 
-### 3. executePlan → on-chain (`contracts` + gas sponsorship)
+### 3. executePlan → on-chain (`contracts` + gas sponsorship) — the core loop
 
-When wired, the "Start earning" and "Harvest"/"Withdraw" actions become a single
-signed `executePlan(Action[])` (batched with `createAccount` on first use) via an
-**EIP-7702 smart-EOA + paymaster** so the user needs no ETH for gas. Because 7702 keeps
-`msg.sender == owner`, the `onlyOwner` checks in `SmartInvestmentAccount` work
-unchanged — no contract changes needed for gas sponsorship.
+The core money movement is **client ↔ contracts**, no server: "Start earning" / "Harvest" /
+"Close" / "Withdraw" become a signed `executePlan(Action[])` (batched with `createAccount`
+on first use) via an **EIP-7702 smart-EOA + paymaster** so the user needs no ETH. Because
+7702 keeps `msg.sender == owner`, the `onlyOwner` checks in `SmartInvestmentAccount` work
+unchanged — no contract changes for gas sponsorship. In the FE this is a drop-in `PiggyView`
+source (`useChainView`) alongside the existing sim/API sources, added when contracts land.
 
 ## File map
 

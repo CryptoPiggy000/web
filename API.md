@@ -5,9 +5,17 @@ for building the backend. The frontend is written against these shapes (mocked i
 via `src/lib/planner.ts` + `src/lib/sim.ts`); swapping the mocks for these endpoints is
 the Phase 1 job.
 
-Design principle: **the client is dumb, the backend orchestrates.** The user never deals
-with gas, chains, or crypto. The backend builds every on-chain operation, sponsors its
-gas, hands the client a single thing to sign, and submits it. See "Operations" below.
+Design principle: **the engine only *suggests* — it never moves funds, and the app runs
+full without it.** The user picks the allocation, the **client** builds the `Action[]`, the
+user **signs `executePlan`** with their own wallet, and it's submitted to a paymaster (gas
+sponsored). That core loop is **client ↔ contracts**, no server in the path. The **engine**
+(behind this backend) is a drop-in smart layer whose job is to **suggest an allocation**
+(and optionally enrich data — live APYs, portfolio aggregation, activity). Take its
+suggestion or ignore it; either way the user never deals with gas, chains, or crypto.
+
+So the endpoints split in two:
+- **Advisory / infra (this backend/engine):** suggest allocation, enrich portfolio/APY/activity, fiat on-ramp, auth. Optional for the core loop (on-ramp aside).
+- **Core money movement:** NOT here — it's the client building + signing `executePlan` against the contracts directly.
 
 ---
 
@@ -74,8 +82,11 @@ enriches with APY, names, pending exits, and (later) fiat value.
 { "goal": "tich-luy", "riskTolerance": "mot-chut", "horizon": "6-24-thang" }
 ```
 
-### `GET /market/strategies`
-The earn options with live rates (drives the chooser).
+### `GET /market/strategies`  — the engine's suggested allocations
+The engine's **suggested** allocations with live rates (drives the chooser). This is the
+engine's real job: *suggest*. The client also ships static defaults, so the chooser — and
+the whole earn flow — works even when the engine is absent. The user is free to pick any of
+these or their own split.
 ```jsonc
 { "strategies": [
   { "id": "safe",     "label": "Safe",         "apyBps": 280,
@@ -87,14 +98,19 @@ The earn options with live rates (drives the chooser).
 
 ---
 
-## 3. Operations (the core: earn / harvest / withdraw)
+## 3. Operations — client-built, optionally engine-assisted
 
-Every state change is an **operation**: backend builds it (including the on-chain
-`Action[]` and a **gas-sponsored** UserOperation), returns one payload to sign, the client
-signs with the Privy wallet, then the backend submits and reports status.
+**The core path is client-side and needs no server.** The user picks an allocation (from
+the suggested strategies, or their own), the client builds the `Action[]`, the user signs
+`executePlan` with the Privy wallet, and it's submitted to a bundler + paymaster. Because we
+use **EIP-7702 + a paymaster**, `msg.sender` stays the owner (so `onlyOwner` passes) and the
+user needs **no ETH**.
 
-Because we use **EIP-7702 + a paymaster**, `msg.sender` stays the owner, so the contract's
-`onlyOwner` checks pass and the user needs **no ETH**. Gas details never reach the client.
+The `/operations/*` endpoints below are an **optional engine-assist**: hand the engine the
+intent and it returns a ready-built, gas-sponsored op to sign — useful when building the
+`Action[]` needs smarts (swap routing, `minOut`, rebalancing across positions). The app
+works without them (client builds the op itself). They also back the dev **mock engine** and
+today's Phase-1 wiring.
 
 ### Build — `POST /operations/earn`
 ```jsonc
@@ -256,19 +272,19 @@ struct Action {
 
 ## Endpoint summary
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/auth/verify` | Privy token → session + owner/piggy |
-| GET  | `/me/portfolio` | buckets + positions + APY |
-| GET/PUT | `/me/preference` | risk preference |
-| GET  | `/market/strategies` | earn options + live APY |
-| POST | `/operations/earn` | build earn op → sign |
-| POST | `/operations/harvest` | build harvest op (fee) → sign |
-| POST | `/operations/exit` | unwind earning → wallet (may be async) → sign |
-| POST | `/operations/withdraw` | build withdraw op (wallet only) → sign |
-| POST | `/operations/:id/submit` | submit signature → txHash |
-| GET  | `/operations/:id` | poll status |
-| POST | `/onramp/session` | fiat checkout URL (card/PayPal) |
-| GET  | `/onramp/session/:id` | on-ramp status |
-| POST | `/onramp/webhook` | provider → backend settlement |
-| GET  | `/me/activity` | history |
+**Core money movement is NOT an endpoint** — the client builds the `Action[]` and the user
+signs `executePlan` against the contracts directly (paymaster-sponsored). Everything below is
+advisory/infra and optional (on-ramp aside).
+
+| Method | Path | Purpose | Needed for core? |
+|---|---|---|---|
+| GET  | `/market/strategies` | **engine: suggest allocation** + live APY | no (static defaults) |
+| POST | `/auth/verify` | Privy token → session + owner/piggy | no |
+| GET  | `/me/portfolio` | buckets + positions + APY (enrichment) | no (readable on-chain) |
+| GET/PUT | `/me/preference` | risk preference | no |
+| GET  | `/me/activity` | history | no (readable from events) |
+| POST | `/onramp/session` | fiat checkout URL (card/PayPal) | **yes** (needs provider keys) |
+| GET  | `/onramp/session/:id` | on-ramp status | yes |
+| POST | `/onramp/webhook` | provider → backend settlement | yes |
+| POST | `/operations/earn\|harvest\|exit\|withdraw` | optional engine-assist: pre-build a sponsored op | no (client builds it) |
+| POST | `/operations/:id/submit` · GET `/operations/:id` | submit / poll (engine-assist path) | no |
