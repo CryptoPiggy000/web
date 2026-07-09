@@ -36,28 +36,42 @@ export function GrowSheet({
 
   const [tab, setTab] = useState<"earn" | "positions">(canExit && !canEarn ? "positions" : "earn");
   const [picked, setPicked] = useState<RiskTolerance | null>(null);
+  const [earnAmount, setEarnAmount] = useState("");
   const [closeAmount, setCloseAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ title: string; sub?: string } | null>(null);
 
-  let closeWei = 0n;
-  try {
-    const [w, f = ""] = (closeAmount || "0").split(".");
-    closeWei = BigInt(w || "0") * 1_000_000n + BigInt((f + "000000").slice(0, 6));
-  } catch {
-    closeWei = 0n;
-  }
+  const toWei = (s: string) => {
+    try {
+      const [w, f = ""] = (s || "0").split(".");
+      return BigInt(w || "0") * 1_000_000n + BigInt((f + "000000").slice(0, 6));
+    } catch {
+      return 0n;
+    }
+  };
+  const earnWei = toWei(earnAmount);
+  const earnValid = earnWei > 0n && earnWei <= restingWei;
+  const closeWei = toWei(closeAmount);
   const closeValid = closeWei > 0n && closeWei <= deployed;
 
   const summary = picked ? optionSummary(picked) : null;
-  const projectedYear = summary ? (Number(restingWei) / 1e6) * (summary.yieldApy / 100) : 0;
+  const projectedYear = summary ? (Number(earnWei) / 1e6) * (summary.yieldApy / 100) : 0;
+
+  // User pressing "cancel" in the wallet popup isn't an error — swallow it.
+  const fail = (e: unknown) => {
+    if (!/reject|denied|cancel/i.test(String(e))) {
+      setResult({ title: "Couldn't complete", sub: "Please try again." });
+    }
+  };
 
   const startEarning = async () => {
-    if (!picked || busy) return;
+    if (!picked || !earnValid || busy) return;
     setBusy(true);
     try {
-      await view.earn(restingWei, picked);
+      await view.earn(earnWei, picked);
       setResult({ title: "Now earning", sub: "Your money is working." });
+    } catch (e) {
+      fail(e);
     } finally {
       setBusy(false);
     }
@@ -73,6 +87,8 @@ export function GrowSheet({
           ? { title: `Harvested ${fmtUsd(r.netBase)}`, sub: `To your wallet · fee ${fmtUsd(r.feeBase)}` }
           : { title: "Nothing to collect yet", sub: "Check back as it grows." },
       );
+    } catch (e) {
+      fail(e);
     } finally {
       setBusy(false);
     }
@@ -84,6 +100,8 @@ export function GrowSheet({
     try {
       await view.closePosition(closeWei);
       setResult({ title: `Closing ${fmtUsd(closeWei)}`, sub: "Arrives in your wallet shortly." });
+    } catch (e) {
+      fail(e);
     } finally {
       setBusy(false);
     }
@@ -91,6 +109,7 @@ export function GrowSheet({
 
   const close = () => {
     setResult(null);
+    setEarnAmount("");
     setCloseAmount("");
     onClose();
   };
@@ -125,9 +144,26 @@ export function GrowSheet({
           {tab === "earn" ? (
             canEarn ? (
               <div className="flex flex-col gap-4">
-                <p className="text-sm text-muted">
-                  <span className="font-medium text-ink">{fmtUsd(restingWei)}</span> ready to earn
-                </p>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">How much to earn</span>
+                  <div className="flex gap-2">
+                    <input
+                      value={earnAmount}
+                      onChange={(e) => setEarnAmount(e.target.value.trim())}
+                      placeholder="0.00"
+                      inputMode="decimal"
+                      className="min-w-0 flex-1 rounded-lg border border-line bg-paper px-3 py-2.5 font-mono text-sm outline-none focus:border-accent"
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setEarnAmount((Number(restingWei) / 1e6).toString())}
+                    >
+                      All
+                    </Button>
+                  </div>
+                  <span className="text-xs text-muted">{fmtUsd(restingWei)} in your wallet</span>
+                </label>
                 <div className="flex flex-col gap-2">
                   {CHOICES.map((c) => {
                     const s = optionSummary(c.value);
@@ -178,7 +214,7 @@ export function GrowSheet({
                   </div>
                 )}
 
-                <Button full icon={<IconTrendUp />} disabled={!picked || busy} onClick={startEarning}>
+                <Button full icon={<IconTrendUp />} disabled={!picked || !earnValid || busy} onClick={startEarning}>
                   {busy ? "Working…" : "Start earning"}
                 </Button>
               </div>
