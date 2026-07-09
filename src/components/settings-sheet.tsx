@@ -1,6 +1,6 @@
 "use client";
 
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import { Sheet } from "./sheet";
 import { Button } from "./button";
@@ -18,6 +18,8 @@ export function SettingsSheet({
   piggyAddress?: `0x${string}`;
 }) {
   const { user, logout, exportWallet } = usePrivy();
+  const { wallets } = useWallets();
+  const owner = wallets.find((w) => w.walletClientType === "privy")?.address;
   const { activity, reset } = usePiggyView();
   const router = useRouter();
 
@@ -35,8 +37,13 @@ export function SettingsSheet({
               rel="noreferrer"
               className="mt-1 inline-block font-mono text-xs text-muted underline decoration-line underline-offset-4"
             >
-              {shortAddress(piggyAddress)} · {activeChain.name}
+              piggy {shortAddress(piggyAddress)} · {activeChain.name}
             </a>
+          )}
+          {owner && (
+            <p className="mt-1 font-mono text-xs text-muted">
+              wallet (pays gas) <span className="select-all">{owner}</span>
+            </p>
           )}
         </section>
 
