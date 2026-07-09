@@ -169,30 +169,9 @@ export function GrowSheet({
                   })}
                 </div>
 
-                {/* 2 — after picking: how much + allocation preview */}
+                {/* 2 — after picking: allocation preview, then how much (near the button) */}
                 {picked && summary && (
                   <>
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-sm font-medium">How much to earn</span>
-                      <div className="flex gap-2">
-                        <input
-                          value={earnAmount}
-                          onChange={(e) => setEarnAmount(e.target.value.trim())}
-                          placeholder="0.00"
-                          inputMode="decimal"
-                          className="min-w-0 flex-1 rounded-lg border border-line bg-paper px-3 py-2.5 font-mono text-sm outline-none focus:border-accent"
-                        />
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setEarnAmount((Number(restingWei) / 1e6).toString())}
-                        >
-                          All
-                        </Button>
-                      </div>
-                      <span className="text-xs text-muted">{fmtUsd(restingWei)} in your wallet</span>
-                    </label>
-
                     <div className="rounded-xl border border-line bg-card p-4">
                       {summary.slices.length > 1 && (
                         <div className="mb-4 flex h-2.5 overflow-hidden rounded-full">
@@ -222,6 +201,27 @@ export function GrowSheet({
                         </span>
                       </div>
                     </div>
+
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">How much to earn</span>
+                      <div className="flex gap-2">
+                        <input
+                          value={earnAmount}
+                          onChange={(e) => setEarnAmount(e.target.value.trim())}
+                          placeholder="0.00"
+                          inputMode="decimal"
+                          className="min-w-0 flex-1 rounded-lg border border-line bg-paper px-3 py-2.5 font-mono text-sm outline-none focus:border-accent"
+                        />
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setEarnAmount((Number(restingWei) / 1e6).toString())}
+                        >
+                          All
+                        </Button>
+                      </div>
+                      <span className="text-xs text-muted">{fmtUsd(restingWei)} in your wallet</span>
+                    </label>
                   </>
                 )}
 
