@@ -120,6 +120,12 @@ export function GrowSheet({
         <SheetSuccess title={result.title} onDone={close}>
           {result.sub}
         </SheetSuccess>
+      ) : busy ? (
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-line border-t-accent" />
+          <p className="font-medium">Confirm in your wallet</p>
+          <p className="text-sm text-muted">Then hang tight while it lands on-chain.</p>
+        </div>
       ) : (
         <div className="flex flex-col gap-5">
           <div className="flex gap-1 rounded-lg bg-paper p-1 text-sm">
@@ -144,26 +150,7 @@ export function GrowSheet({
           {tab === "earn" ? (
             canEarn ? (
               <div className="flex flex-col gap-4">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-sm font-medium">How much to earn</span>
-                  <div className="flex gap-2">
-                    <input
-                      value={earnAmount}
-                      onChange={(e) => setEarnAmount(e.target.value.trim())}
-                      placeholder="0.00"
-                      inputMode="decimal"
-                      className="min-w-0 flex-1 rounded-lg border border-line bg-paper px-3 py-2.5 font-mono text-sm outline-none focus:border-accent"
-                    />
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setEarnAmount((Number(restingWei) / 1e6).toString())}
-                    >
-                      All
-                    </Button>
-                  </div>
-                  <span className="text-xs text-muted">{fmtUsd(restingWei)} in your wallet</span>
-                </label>
+                {/* 1 — pick a strategy */}
                 <div className="flex flex-col gap-2">
                   {CHOICES.map((c) => {
                     const s = optionSummary(c.value);
@@ -182,38 +169,63 @@ export function GrowSheet({
                   })}
                 </div>
 
+                {/* 2 — after picking: how much + allocation preview */}
                 {picked && summary && (
-                  <div className="rounded-xl border border-line bg-card p-4">
-                    {summary.slices.length > 1 && (
-                      <div className="mb-4 flex h-2.5 overflow-hidden rounded-full">
-                        {summary.slices.map((s, i) => (
-                          <div
-                            key={s.key}
-                            style={{ width: `${s.percent}%` }}
-                            className={BAR_TONE[i % BAR_TONE.length]}
-                          />
-                        ))}
+                  <>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium">How much to earn</span>
+                      <div className="flex gap-2">
+                        <input
+                          value={earnAmount}
+                          onChange={(e) => setEarnAmount(e.target.value.trim())}
+                          placeholder="0.00"
+                          inputMode="decimal"
+                          className="min-w-0 flex-1 rounded-lg border border-line bg-paper px-3 py-2.5 font-mono text-sm outline-none focus:border-accent"
+                        />
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setEarnAmount((Number(restingWei) / 1e6).toString())}
+                        >
+                          All
+                        </Button>
                       </div>
-                    )}
-                    <ul className="space-y-2.5 text-sm">
-                      {summary.slices.map((s, i) => (
-                        <li key={s.key} className="flex items-center gap-2.5">
-                          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${BAR_TONE[i % BAR_TONE.length]}`} />
-                          <span className="flex-1">{s.name}</span>
-                          <span className="text-muted">{s.percent}%</span>
-                          <span className="w-20 text-right text-good">≈{s.apy}%/yr</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="mt-4 flex justify-between border-t border-line pt-3 text-sm">
-                      <span className="text-muted">Est. earnings in a year</span>
-                      <span className="font-medium text-good">
-                        ≈{fmtUsd(BigInt(Math.round(projectedYear * 1e6)))}
-                      </span>
+                      <span className="text-xs text-muted">{fmtUsd(restingWei)} in your wallet</span>
+                    </label>
+
+                    <div className="rounded-xl border border-line bg-card p-4">
+                      {summary.slices.length > 1 && (
+                        <div className="mb-4 flex h-2.5 overflow-hidden rounded-full">
+                          {summary.slices.map((s, i) => (
+                            <div
+                              key={s.key}
+                              style={{ width: `${s.percent}%` }}
+                              className={BAR_TONE[i % BAR_TONE.length]}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <ul className="space-y-2.5 text-sm">
+                        {summary.slices.map((s, i) => (
+                          <li key={s.key} className="flex items-center gap-2.5">
+                            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${BAR_TONE[i % BAR_TONE.length]}`} />
+                            <span className="flex-1">{s.name}</span>
+                            <span className="text-muted">{s.percent}%</span>
+                            <span className="w-20 text-right text-good">≈{s.apy}%/yr</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="mt-4 flex justify-between border-t border-line pt-3 text-sm">
+                        <span className="text-muted">Est. earnings in a year</span>
+                        <span className="font-medium text-good">
+                          ≈{fmtUsd(BigInt(Math.round(projectedYear * 1e6)))}
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
 
+                {/* 3 — go */}
                 <Button full icon={<IconTrendUp />} disabled={!picked || !earnValid || busy} onClick={startEarning}>
                   {busy ? "Working…" : "Start earning"}
                 </Button>
