@@ -8,6 +8,7 @@ import { SheetSuccess } from "./sheet-success";
 import { IconCard, IconQr, IconCheck } from "./icons";
 import { usePiggyView } from "@/lib/piggy";
 import { activeChain, ONRAMP_DEV } from "@/lib/chain";
+import { CHAIN_MODE } from "@/lib/contracts";
 
 type Mode = "choose" | "fiat" | "crypto";
 type FiatStep = "form" | "processing" | "done";
@@ -22,7 +23,8 @@ export function DepositSheet({
   address?: `0x${string}`;
 }) {
   const view = usePiggyView();
-  const [mode, setMode] = useState<Mode>("choose");
+  // On-chain (testnet): fund via the crypto address (real USDC). Fiat on-ramp is prod-only.
+  const [mode, setMode] = useState<Mode>(CHAIN_MODE ? "crypto" : "choose");
   const [copied, setCopied] = useState(false);
   const [amount, setAmount] = useState("");
   const [fiatStep, setFiatStep] = useState<FiatStep>("form");
@@ -61,16 +63,18 @@ export function DepositSheet({
     <Sheet open={open} onClose={close} title={title}>
       {mode === "choose" ? (
         <div className="flex flex-col gap-3">
-          <button
-            onClick={() => setMode("fiat")}
-            className="flex items-center gap-4 rounded-xl border border-line bg-card p-4 text-left transition-colors hover:border-muted"
-          >
-            <IconCard className="h-6 w-6 text-accent" />
-            <span>
-              <span className="block font-medium">Card or PayPal</span>
-              <span className="block text-sm text-muted">Pay in dollars. No crypto needed.</span>
-            </span>
-          </button>
+          {!CHAIN_MODE && (
+            <button
+              onClick={() => setMode("fiat")}
+              className="flex items-center gap-4 rounded-xl border border-line bg-card p-4 text-left transition-colors hover:border-muted"
+            >
+              <IconCard className="h-6 w-6 text-accent" />
+              <span>
+                <span className="block font-medium">Card or PayPal</span>
+                <span className="block text-sm text-muted">Pay in dollars. No crypto needed.</span>
+              </span>
+            </button>
+          )}
           <button
             onClick={() => setMode("crypto")}
             className="flex items-center gap-4 rounded-xl border border-line bg-card p-4 text-left transition-colors hover:border-muted"
@@ -128,12 +132,23 @@ export function DepositSheet({
             {copied ? "Copied" : "Copy address"}
           </Button>
           <p className="text-sm text-muted">Send USDC on {activeChain.name}. Nothing else.</p>
-          <button
-            onClick={() => setMode("choose")}
-            className="text-sm text-muted underline underline-offset-4 hover:text-ink"
-          >
-            Back
-          </button>
+          {CHAIN_MODE ? (
+            <a
+              href="https://faucet.circle.com/"
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-accent underline underline-offset-4"
+            >
+              Need test USDC? Circle Sepolia faucet
+            </a>
+          ) : (
+            <button
+              onClick={() => setMode("choose")}
+              className="text-sm text-muted underline underline-offset-4 hover:text-ink"
+            >
+              Back
+            </button>
+          )}
         </div>
       )}
     </Sheet>

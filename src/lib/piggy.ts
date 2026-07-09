@@ -1,16 +1,30 @@
 "use client";
 
 import { useCallback } from "react";
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { erc20Abi } from "viem";
-import { useWriteContract } from "wagmi";
+import { useReadContracts, useWriteContract, usePublicClient } from "wagmi";
 import { usePiggy } from "./usePiggy";
 import { useSim, deployedTotalWei, accruedWei } from "./sim";
 import { optionSummary } from "./planner";
 import { api, API_MODE, runOp } from "./api";
-import { USDC_ADDRESS } from "./chain";
+import { USDC_ADDRESS, FACTORY_ADDRESS } from "./chain";
+import {
+  CHAIN_MODE,
+  POSITIONS,
+  AAVE_ADDRESS,
+  VAULT_ADDRESS,
+  factoryAbi,
+  accountAbi,
+  aaveAbi,
+  vaultAbi,
+  buildEarnPlan,
+  buildClosePlan,
+} from "./contracts";
 import type { ActivityEntry, RiskTolerance } from "./types";
+
+const ZERO_SALT = ("0x" + "0".repeat(64)) as `0x${string}`;
 
 const DEMO_SPEED = 8000; // match backend mock + client sim so the live tick lines up
 
@@ -256,5 +270,127 @@ function useApiView(): PiggyView {
   };
 }
 
-/** The one hook the UI uses. Bound at module load by the env — no conditional hooks. */
-export const usePiggyView: () => PiggyView = API_MODE ? useApiView : useSimView;
+// ---------------------------------------------------------------------------
+// CHAIN source — real on-chain (Sepolia contracts). Active when the factory is set.
+// Money moves client ↔ contracts: user builds Action[] + signs executePlan.
+// ---------------------------------------------------------------------------
+function useChainView(): PiggyView {
+  const { piggyAddress, balance } = usePiggy(); // account addr (predict) + idle USDC
+  const { wallets } = useWallets();
+  const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
+  const qc = useQueryClient();
+
+  const owner = wallets.find((w) => w.walletClientType === "privy")?.address as
+    | `0x${string}`
+    | undefined;
+
+  const positionsRead = useReadContracts({
+    query: { enabled: Boolean(piggyAddress), refetchInterval: 8_000 },
+    contracts: piggyAddress
+      ? [
+          { address: AAVE_ADDRESS, abi: aaveAbi, functionName: "supplied", args: [piggyAddress, USDC_ADDRESS as `0x${string}`] },
+          { address: VAULT_ADDRESS, abi: vaultAbi, functionName: "maxWithdraw", args: [piggyAddress] },
+        ]
+      : [],
+  });
+  const aaveBase = (positionsRead.data?.[0]?.result as bigint | undefined) ?? 0n;
+  const vaultBase = (positionsRead.data?.[1]?.result as bigint | undefined) ?? 0n;
+
+  const idle = balance; // USDC sitting in the account
+  const deployed = aaveBase + vaultBase;
+  const total = idle + deployed;
+  const positions = (
+    [
+      { key: "aave", base: aaveBase },
+      { key: "vault", base: vaultBase },
+    ] as const
+  )
+    .filter((p) => p.base > 0n)
+    .map((p) => ({ key: p.key, name: POSITIONS[p.key].name, base: p.base, apyBps: POSITIONS[p.key].apyBps }));
+  const apyBps =
+    deployed > 0n ? Math.round(Number(aaveBase * 280n + vaultBase * 410n) / Number(deployed)) : 0;
+
+  const refresh = useCallback(() => {
+    qc.invalidateQueries(); // re-reads balance + positions
+  }, [qc]);
+
+  const ensureAccount = useCallback(async () => {
+    if (!piggyAddress) throw new Error("No account address");
+    const code = await publicClient?.getBytecode({ address: piggyAddress });
+    if (!code || code === "0x") {
+      await writeContractAsync({
+        address: FACTORY_ADDRESS!,
+        abi: factoryAbi,
+        functionName: "createAccount",
+        args: [ZERO_SALT],
+      });
+    }
+  }, [piggyAddress, publicClient, writeContractAsync]);
+
+  return {
+    ready: Boolean(piggyAddress),
+    piggyAddress,
+    restingBase: idle,
+    withdrawableBase: idle,
+    deployedBase: deployed,
+    positions,
+    apyBps,
+    activity: [], // TODO: read from account events
+    empty: total === 0n,
+    earning: deployed > 0n,
+    liveTotalUsd: () => Number(total) / 1e6, // mocks don't accrue — flat
+    liveAccruedUsd: () => 0,
+    bumpValueUsd: Number(total) / 1e6,
+    earn: async (amountBase, risk) => {
+      if (!piggyAddress) return;
+      await ensureAccount();
+      const plan = buildEarnPlan(optionSummary(risk).slices, amountBase);
+      await writeContractAsync({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
+      refresh();
+    },
+    harvest: async () => ({ netBase: 0n, feeBase: 0n }), // no yield on mock venues
+    closePosition: async (amountBase) => {
+      if (!piggyAddress) return;
+      const plan = buildClosePlan(
+        [
+          { key: "aave", base: aaveBase },
+          { key: "vault", base: vaultBase },
+        ],
+        amountBase,
+      );
+      await writeContractAsync({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
+      refresh();
+    },
+    addFiat: async () => {}, // testnet: fund via the crypto address (Circle faucet), not sandbox
+    withdraw: async (to, amountBase) => {
+      if (!piggyAddress) throw new Error("No account");
+      // The account only pays out to its owner; then the owner forwards to `to` if different.
+      const hash = await writeContractAsync({
+        address: piggyAddress,
+        abi: accountAbi,
+        functionName: "withdraw",
+        args: [USDC_ADDRESS as `0x${string}`, amountBase],
+      });
+      if (owner && to.toLowerCase() !== owner.toLowerCase()) {
+        await writeContractAsync({
+          address: USDC_ADDRESS as `0x${string}`,
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [to, amountBase],
+        });
+      }
+      refresh();
+      return { txHash: hash };
+    },
+    reset: () => {},
+  };
+}
+
+/** The one hook the UI uses. Bound at module load — no conditional hooks.
+ *  Chain (real on-chain) when the factory is set; else backend; else the client sim. */
+export const usePiggyView: () => PiggyView = CHAIN_MODE
+  ? useChainView
+  : API_MODE
+    ? useApiView
+    : useSimView;
