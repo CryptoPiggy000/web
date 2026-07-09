@@ -1,37 +1,34 @@
 "use client";
 
 import { useState } from "react";
-import { erc20Abi, isAddress, parseUnits } from "viem";
-import { useWriteContract } from "wagmi";
+import { isAddress, parseUnits } from "viem";
 import { Sheet } from "./sheet";
 import { Button } from "./button";
 import { SheetSuccess } from "./sheet-success";
-import { useSim } from "@/lib/sim";
+import { usePiggyView } from "@/lib/piggy";
 import { fmtUsd } from "@/lib/format";
-import { explorerTxUrl, USDC_ADDRESS, USDC_DECIMALS } from "@/lib/chain";
+import { explorerTxUrl, USDC_DECIMALS } from "@/lib/chain";
 
 export function WithdrawSheet({
   open,
   onClose,
-  availableBase,
-  restingBase,
-  earningBase,
   onManageEarning,
 }: {
   open: boolean;
   onClose: () => void;
-  availableBase: bigint; // USDC thật rút được ngay (từ ví)
-  restingBase: bigint; // tổng trong ví hiển thị (gồm cả sandbox/lãi sim)
-  earningBase: bigint; // vốn đang earn (phải gỡ vị thế mới rút được)
-  onManageEarning: () => void; // mở màn Earn → Positions để gỡ vị thế
+  onManageEarning: () => void;
 }) {
+  const view = usePiggyView();
+  const availableBase = view.withdrawableBase;
+  const earningBase = view.deployedBase;
   const hasEarning = earningBase > 0n;
-  const { addActivity } = useSim();
-  const { writeContractAsync, isPending } = useWriteContract();
+  const hasSandbox = view.restingBase > availableBase;
 
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   let amountBase = 0n;
@@ -43,25 +40,15 @@ export function WithdrawSheet({
     amountValid = false;
   }
   const toValid = isAddress(to);
-  const hasSandbox = restingBase > availableBase; // phần trong ví là tiền test, không rút thật được
 
   const submit = async () => {
-    if (!USDC_ADDRESS) return;
+    if (!toValid || !amountValid || busy) return;
     setError(null);
+    setBusy(true);
     try {
-      const hash = await writeContractAsync({
-        address: USDC_ADDRESS,
-        abi: erc20Abi,
-        functionName: "transfer",
-        args: [to as `0x${string}`, amountBase],
-      });
-      setTxHash(hash);
-      addActivity({
-        ts: Date.now(),
-        type: "withdraw",
-        summary: `Withdrew ${fmtUsd(amountBase)} to ${to.slice(0, 6)}…${to.slice(-4)}`,
-        txHash: hash,
-      });
+      const r = await view.withdraw(to as `0x${string}`, amountBase);
+      setTxHash(r.txHash ?? null);
+      setSent(true);
       setAmount("");
       setTo("");
     } catch (e) {
@@ -71,31 +58,34 @@ export function WithdrawSheet({
           ? "The piggy needs a little ETH to cover the network fee. (Handled automatically once we're live.)"
           : "Couldn't send. Try again.",
       );
+    } finally {
+      setBusy(false);
     }
+  };
+
+  const done = () => {
+    setSent(false);
+    setTxHash(null);
+    onClose();
   };
 
   return (
     <Sheet open={open} onClose={onClose} title="Withdraw">
-      {txHash ? (
-        <SheetSuccess
-          title="Sent"
-          onDone={() => {
-            setTxHash(null);
-            onClose();
-          }}
-        >
-          <a
-            href={explorerTxUrl(txHash)}
-            target="_blank"
-            rel="noreferrer"
-            className="underline underline-offset-4 hover:text-ink"
-          >
-            View transaction
-          </a>
+      {sent ? (
+        <SheetSuccess title="Sent" onDone={done}>
+          {txHash && (
+            <a
+              href={explorerTxUrl(txHash)}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-4 hover:text-ink"
+            >
+              View transaction
+            </a>
+          )}
         </SheetSuccess>
       ) : (
         <div className="flex flex-col gap-4">
-          {/* Breakdown: rút được bao nhiêu, đang earn bao nhiêu */}
           <div className="space-y-1.5 rounded-xl bg-paper p-4 text-sm">
             <div className="flex justify-between">
               <span className="text-muted">Available to withdraw</span>
@@ -112,9 +102,7 @@ export function WithdrawSheet({
           {availableBase === 0n ? (
             <div className="flex flex-col items-center gap-3 py-1 text-center">
               <p className="text-sm text-muted">
-                {hasEarning
-                  ? "It's all earning. Close a position to free it up."
-                  : "Add money first."}
+                {hasEarning ? "It's all earning. Close a position to free it up." : "Add money first."}
               </p>
               {hasEarning && (
                 <Button full variant="secondary" onClick={onManageEarning}>
@@ -154,8 +142,8 @@ export function WithdrawSheet({
                 </div>
               </label>
 
-              <Button full disabled={!toValid || !amountValid || isPending} onClick={submit}>
-                {isPending ? "Sending…" : "Confirm withdrawal"}
+              <Button full disabled={!toValid || !amountValid || busy} onClick={submit}>
+                {busy ? "Sending…" : "Confirm withdrawal"}
               </Button>
               {error && <p className="text-sm text-accent-deep">{error}</p>}
 

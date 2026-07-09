@@ -1,0 +1,260 @@
+"use client";
+
+import { useCallback } from "react";
+import { usePrivy } from "@privy-io/react-auth";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { erc20Abi } from "viem";
+import { useWriteContract } from "wagmi";
+import { usePiggy } from "./usePiggy";
+import { useSim, deployedTotalWei, accruedWei } from "./sim";
+import { optionSummary } from "./planner";
+import { api, API_MODE, runOp } from "./api";
+import { USDC_ADDRESS } from "./chain";
+import type { ActivityEntry, RiskTolerance } from "./types";
+
+const DEMO_SPEED = 8000; // match backend mock + client sim so the live tick lines up
+
+/** RiskTolerance (UI) → strategy id (API / market). */
+export const STRATEGY_ID: Record<RiskTolerance, string> = {
+  khong: "safe",
+  "mot-chut": "balanced",
+  "thoai-mai": "growth",
+};
+
+export interface Position {
+  key: string;
+  name: string;
+  base: bigint;
+  apyBps: number;
+}
+
+/** One normalized shape the UI consumes, whether data comes from the sim or the backend. */
+export interface PiggyView {
+  ready: boolean;
+  piggyAddress?: `0x${string}`;
+
+  restingBase: bigint; // in wallet
+  withdrawableBase: bigint; // rút thật được ngay
+  deployedBase: bigint; // vốn đang earn (principal)
+  positions: Position[];
+  apyBps: number;
+  activity: ActivityEntry[];
+  empty: boolean;
+  earning: boolean;
+
+  liveTotalUsd: (now: number) => number; // hero, có tick lãi cục bộ
+  liveAccruedUsd: (now: number) => number; // lãi đang chạy (positions tab)
+  bumpValueUsd: number; // heo nảy khi tăng
+
+  earn: (amountBase: bigint, risk: RiskTolerance) => Promise<void>;
+  harvest: () => Promise<{ netBase: bigint; feeBase: bigint }>;
+  closePosition: (amountBase: bigint) => Promise<void>;
+  addFiat: (amountUsd: number) => Promise<void>;
+  withdraw: (to: `0x${string}`, amountBase: bigint) => Promise<{ txHash?: string }>;
+  reset: () => void;
+}
+
+// ---------------------------------------------------------------------------
+// SIM source (Phase 0, client-side) — the default when no NEXT_PUBLIC_API_URL.
+// ---------------------------------------------------------------------------
+function useSimView(): PiggyView {
+  const { piggyAddress, balance } = usePiggy();
+  const sim = useSim();
+  const { writeContractAsync } = useWriteContract();
+
+  const deployed = deployedTotalWei(sim.positions);
+  const spendable = balance + BigInt(sim.harvestedWei) + BigInt(sim.sandboxWei);
+  const resting = spendable > deployed ? spendable - deployed : 0n;
+  const withdrawable = resting < balance ? resting : balance;
+  const harvestedUsd = Number(BigInt(sim.harvestedWei)) / 1e6;
+  const sandboxUsd = Number(BigInt(sim.sandboxWei)) / 1e6;
+  const realUsd = Number(balance) / 1e6;
+
+  const apyBps =
+    deployed > 0n
+      ? Math.round(
+          sim.positions.reduce((a, p) => a + (p.apy ?? 0) * Number(BigInt(p.amountWei)), 0) /
+            Number(deployed) *
+            100,
+        )
+      : 0;
+
+  const earn = useCallback(
+    async (amountBase: bigint, risk: RiskTolerance) => {
+      const slices = optionSummary(risk).slices;
+      sim.earnMore(
+        slices.map((s) => ({
+          key: s.key,
+          name: s.name,
+          amountWei: ((amountBase * BigInt(s.percent)) / 100n).toString(),
+          apy: s.apy,
+        })),
+        "Put money to work",
+      );
+    },
+    [sim],
+  );
+
+  const harvest = useCallback(async () => {
+    const r = sim.harvest();
+    return { netBase: r.net, feeBase: r.fee };
+  }, [sim]);
+
+  const closePosition = useCallback(async (amountBase: bigint) => sim.exitToWallet(amountBase), [sim]);
+  const addFiat = useCallback(
+    async (amountUsd: number) => sim.devDeposit(BigInt(Math.round(amountUsd * 1e6))),
+    [sim],
+  );
+
+  const withdraw = useCallback(
+    async (to: `0x${string}`, amountBase: bigint) => {
+      if (!USDC_ADDRESS) throw new Error("No USDC on this chain");
+      const txHash = await writeContractAsync({
+        address: USDC_ADDRESS,
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [to, amountBase],
+      });
+      sim.addActivity({
+        ts: Date.now(),
+        type: "withdraw",
+        summary: `Withdrew $${(Number(amountBase) / 1e6).toFixed(2)} to ${to.slice(0, 6)}…`,
+        txHash,
+      });
+      return { txHash };
+    },
+    [sim, writeContractAsync],
+  );
+
+  return {
+    ready: true,
+    piggyAddress,
+    restingBase: resting,
+    withdrawableBase: withdrawable,
+    deployedBase: deployed,
+    positions: sim.positions.map((p) => ({
+      key: p.key,
+      name: p.name,
+      base: BigInt(p.amountWei),
+      apyBps: Math.round((p.apy ?? 0) * 100),
+    })),
+    apyBps,
+    activity: sim.activity,
+    empty:
+      balance === 0n &&
+      sim.positions.length === 0 &&
+      sim.sandboxWei === "0" &&
+      sim.harvestedWei === "0",
+    earning: deployed > 0n,
+    liveTotalUsd: (now) =>
+      realUsd + harvestedUsd + sandboxUsd + Number(accruedWei(sim.positions, sim.earnSince, now)) / 1e6,
+    liveAccruedUsd: (now) => Number(accruedWei(sim.positions, sim.earnSince, now)) / 1e6,
+    bumpValueUsd: Number(spendable) / 1e6,
+    earn,
+    harvest,
+    closePosition,
+    addFiat,
+    withdraw,
+    reset: sim.reset,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// API source — active when NEXT_PUBLIC_API_URL is set (talks to the backend).
+// ---------------------------------------------------------------------------
+function useApiView(): PiggyView {
+  const { authenticated, getAccessToken } = usePrivy();
+  const qc = useQueryClient();
+
+  const sessionQ = useQuery({
+    queryKey: ["session"],
+    enabled: authenticated,
+    staleTime: 50 * 60_000,
+    queryFn: async () => {
+      const token = await getAccessToken();
+      return api.verify(token ?? "");
+    },
+  });
+  const hasSession = Boolean(sessionQ.data);
+
+  const portfolioQ = useQuery({
+    queryKey: ["portfolio"],
+    enabled: hasSession,
+    refetchInterval: 5_000,
+    queryFn: api.portfolio,
+  });
+  const activityQ = useQuery({
+    queryKey: ["activity"],
+    enabled: hasSession,
+    refetchInterval: 5_000,
+    queryFn: api.activity,
+  });
+
+  const p = portfolioQ.data;
+  const deployed = p ? BigInt(p.principal.base) : 0n;
+  const resting = p ? BigInt(p.resting.base) : 0n;
+  const totalUsd = p ? Number(p.total.base) / 1e6 : 0;
+  const apyBps = p?.apyBps ?? 0;
+  const fetchedAt = portfolioQ.dataUpdatedAt; // 0 before first fetch (then deployed=0 → rate=0)
+  const ratePerMs = (Number(deployed) * (apyBps / 10000) * DEMO_SPEED) / (365 * 24 * 60 * 60 * 1000) / 1e6;
+
+  const refresh = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ["portfolio"] });
+    qc.invalidateQueries({ queryKey: ["activity"] });
+  }, [qc]);
+
+  return {
+    ready: portfolioQ.isSuccess,
+    piggyAddress: sessionQ.data?.user.piggy as `0x${string}` | undefined,
+    restingBase: resting,
+    withdrawableBase: resting,
+    deployedBase: deployed,
+    positions: (p?.positions ?? []).map((s) => ({
+      key: s.key,
+      name: s.name,
+      base: BigInt(s.base),
+      apyBps: s.apyBps,
+    })),
+    apyBps,
+    activity: (activityQ.data?.items ?? []).map((a) => ({
+      ts: a.ts,
+      type: a.type as ActivityEntry["type"],
+      summary: a.summary,
+      txHash: a.txHash,
+    })),
+    empty: Boolean(p) && totalUsd === 0,
+    earning: deployed > 0n,
+    liveTotalUsd: (now) => totalUsd + Math.max(0, ratePerMs * (now - fetchedAt)),
+    liveAccruedUsd: (now) =>
+      (p ? Number(p.accrued.base) / 1e6 : 0) + Math.max(0, ratePerMs * (now - fetchedAt)),
+    bumpValueUsd: totalUsd,
+    earn: async (amountBase, risk) => {
+      await runOp(api.buildEarn(amountBase.toString(), STRATEGY_ID[risk]));
+      refresh();
+    },
+    harvest: async () => {
+      const op = await api.buildHarvest();
+      await api.submit(op.operationId, "0x");
+      refresh();
+      const pv = op.preview as { netBase?: string; feeBase?: string };
+      return { netBase: BigInt(pv.netBase ?? "0"), feeBase: BigInt(pv.feeBase ?? "0") };
+    },
+    closePosition: async (amountBase) => {
+      await runOp(api.buildExit(amountBase.toString()));
+      refresh();
+    },
+    addFiat: async (amountUsd) => {
+      await api.onramp(amountUsd.toFixed(2));
+      refresh();
+    },
+    withdraw: async (to, amountBase) => {
+      const r = await runOp(api.buildWithdraw(to, amountBase.toString()));
+      refresh();
+      return { txHash: r.txHash };
+    },
+    reset: () => {},
+  };
+}
+
+/** The one hook the UI uses. Bound at module load by the env — no conditional hooks. */
+export const usePiggyView: () => PiggyView = API_MODE ? useApiView : useSimView;

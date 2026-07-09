@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { usePiggy } from "@/lib/usePiggy";
-import { useSim, deployedTotalWei, accruedWei } from "@/lib/sim";
-import { fmtUsd, usdToNumber } from "@/lib/format";
+import { useState } from "react";
+import { usePiggyView } from "@/lib/piggy";
+import { fmtUsd } from "@/lib/format";
 import { BalanceCard } from "@/components/balance-card";
 import { Button } from "@/components/button";
 import { IconTrendUp, IconArrowDown, IconPlus } from "@/components/icons";
@@ -15,44 +14,17 @@ import { SettingsSheet } from "@/components/settings-sheet";
 type SheetName = "deposit" | "withdraw" | "grow" | "settings" | null;
 
 export default function Home() {
-  const { piggyAddress, balance } = usePiggy();
-  const { positions, earnSince, harvestedWei, sandboxWei } = useSim();
+  const view = usePiggyView();
   const [sheet, setSheet] = useState<SheetName>(null);
 
-  // Tiền trong ví (spendable) = USDC thật + lãi đã harvest + tiền nạp fiat dev (sandbox).
-  const spendable = balance + BigInt(harvestedWei) + BigInt(sandboxWei);
-  const deployed = deployedTotalWei(positions); // vốn đang earn
-  const resting = spendable > deployed ? spendable - deployed : 0n; // trong ví, chưa earn
-  // Rút thật chỉ được phần USDC thật (không phải sandbox/lãi sim).
-  const realWithdrawable = resting < balance ? resting : balance;
-  const earning = deployed > 0n;
-  const empty =
-    balance === 0n && positions.length === 0 && sandboxWei === "0" && harvestedWei === "0";
-
-  const harvestedUsd = Number(BigInt(harvestedWei)) / 1e6;
-  const sandboxUsd = Number(BigInt(sandboxWei)) / 1e6;
-  const spendableUsd = Number(spendable) / 1e6; // để heo nảy khi tiền vào (kể cả nạp thẻ)
-
-  const blendedApy = earning
-    ? positions.reduce((a, p) => a + (p.apy ?? 0) * Number(BigInt(p.amountWei)), 0) /
-      Number(deployed)
-    : 0;
-
-  // Số dư sống = spendable + lãi đang cộng dồn (Phase 0 sim).
-  const realUsd = usdToNumber(balance);
-  const compute = useCallback(
-    (now: number) =>
-      realUsd + harvestedUsd + sandboxUsd + Number(accruedWei(positions, earnSince, now)) / 1e6,
-    [realUsd, harvestedUsd, sandboxUsd, positions, earnSince],
-  );
-
+  const { piggyAddress, restingBase, deployedBase, earning, empty, apyBps } = view;
   const close = () => setSheet(null);
   const earnLabel = earning ? "Earn more" : "Start earning";
 
   const status = empty ? (
     <span className="text-muted">Feed your piggy to start.</span>
   ) : earning ? (
-    <span className="text-good">Growing at ≈{blendedApy.toFixed(1)}%/yr</span>
+    <span className="text-good">Growing at ≈{(apyBps / 100).toFixed(1)}%/yr</span>
   ) : (
     <span className="text-muted">Resting. Put it to work.</span>
   );
@@ -76,20 +48,20 @@ export default function Home() {
       <main className="flex flex-1 flex-col pb-10">
         <div className="flex flex-1 flex-col items-center justify-center">
           <BalanceCard
-            compute={compute}
+            compute={view.liveTotalUsd}
             precision={earning ? 4 : 2}
             status={status}
-            bumpValue={spendableUsd}
+            bumpValue={view.bumpValueUsd}
           />
 
           {earning && (
             <div className="mt-2 flex items-center gap-4 px-6 text-sm">
               <span className="text-muted">
-                In wallet <span className="font-medium text-ink">{fmtUsd(resting)}</span>
+                In wallet <span className="font-medium text-ink">{fmtUsd(restingBase)}</span>
               </span>
               <span className="text-line">·</span>
               <span className="text-muted">
-                Earning <span className="font-medium text-ink">{fmtUsd(deployed)}</span>
+                Earning <span className="font-medium text-ink">{fmtUsd(deployedBase)}</span>
               </span>
             </div>
           )}
@@ -122,18 +94,9 @@ export default function Home() {
       <WithdrawSheet
         open={sheet === "withdraw"}
         onClose={close}
-        availableBase={realWithdrawable}
-        restingBase={resting}
-        earningBase={deployed}
         onManageEarning={() => setSheet("grow")}
       />
-      <GrowSheet
-        open={sheet === "grow"}
-        onClose={close}
-        restingWei={resting}
-        positions={positions}
-        onAddMoney={() => setSheet("deposit")}
-      />
+      <GrowSheet open={sheet === "grow"} onClose={close} onAddMoney={() => setSheet("deposit")} />
       <SettingsSheet open={sheet === "settings"} onClose={close} piggyAddress={piggyAddress} />
     </div>
   );

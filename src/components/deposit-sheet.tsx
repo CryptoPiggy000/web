@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import QRCode from "react-qr-code";
-import { parseUnits } from "viem";
 import { Sheet } from "./sheet";
 import { Button } from "./button";
 import { SheetSuccess } from "./sheet-success";
 import { IconCard, IconQr, IconCheck } from "./icons";
-import { useSim } from "@/lib/sim";
-import { activeChain, ONRAMP_DEV, USDC_DECIMALS } from "@/lib/chain";
+import { usePiggyView } from "@/lib/piggy";
+import { activeChain, ONRAMP_DEV } from "@/lib/chain";
 
 type Mode = "choose" | "fiat" | "crypto";
 type FiatStep = "form" | "processing" | "done";
@@ -22,7 +21,7 @@ export function DepositSheet({
   onClose: () => void;
   address?: `0x${string}`;
 }) {
-  const { devDeposit } = useSim();
+  const view = usePiggyView();
   const [mode, setMode] = useState<Mode>("choose");
   const [copied, setCopied] = useState(false);
   const [amount, setAmount] = useState("");
@@ -30,14 +29,8 @@ export function DepositSheet({
 
   if (!address) return null;
 
-  let amountBase = 0n;
-  let amountValid = false;
-  try {
-    amountBase = parseUnits(amount || "0", USDC_DECIMALS);
-    amountValid = amountBase > 0n;
-  } catch {
-    amountValid = false;
-  }
+  const amountNum = Number(amount);
+  const amountValid = Number.isFinite(amountNum) && amountNum > 0;
 
   const copy = async () => {
     await navigator.clipboard.writeText(address);
@@ -45,17 +38,13 @@ export function DepositSheet({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const payWithCard = () => {
+  const payWithCard = async () => {
     if (!amountValid) return;
-    if (ONRAMP_DEV) {
-      // DEV MODE: mô phỏng checkout của cổng thứ ba rồi cộng tiền sandbox.
-      setFiatStep("processing");
-      setTimeout(() => {
-        devDeposit(amountBase);
-        setFiatStep("done");
-      }, 1400);
-    }
-    // PROD: mở checkoutUrl trả về từ backend POST /onramp/session (xem API.md).
+    setFiatStep("processing");
+    // Dev/mock: credits the wallet. Prod: backend returns a hosted checkout URL (API.md).
+    await new Promise((r) => setTimeout(r, 1000));
+    await view.addFiat(amountNum);
+    setFiatStep("done");
   };
 
   const close = () => {
@@ -95,7 +84,7 @@ export function DepositSheet({
         </div>
       ) : mode === "fiat" ? (
         fiatStep === "done" ? (
-          <SheetSuccess title={`Added $${(Number(amountBase) / 1e6).toFixed(2)}`} onDone={close}>
+          <SheetSuccess title={`Added $${amountNum.toFixed(2)}`} onDone={close}>
             {ONRAMP_DEV ? "Sandbox top-up · ready to earn" : "Ready to earn"}
           </SheetSuccess>
         ) : fiatStep === "processing" ? (

@@ -4,7 +4,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import { Sheet } from "./sheet";
 import { Button } from "./button";
-import { useSim } from "@/lib/sim";
+import { usePiggyView } from "@/lib/piggy";
 import { activeChain, explorerAddressUrl } from "@/lib/chain";
 import { fmtTime, shortAddress } from "@/lib/format";
 
@@ -18,7 +18,7 @@ export function SettingsSheet({
   piggyAddress?: `0x${string}`;
 }) {
   const { user, logout, exportWallet } = usePrivy();
-  const { activity, reset } = useSim();
+  const { activity, reset } = usePiggyView();
   const router = useRouter();
 
   const email = user?.email?.address ?? user?.google?.email ?? "—";
