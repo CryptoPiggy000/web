@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { useSetActiveWallet } from "@privy-io/wagmi";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { erc20Abi } from "viem";
 import { useReadContracts, useWriteContract, usePublicClient } from "wagmi";
@@ -277,13 +278,19 @@ function useApiView(): PiggyView {
 function useChainView(): PiggyView {
   const { piggyAddress, balance } = usePiggy(); // account addr (predict) + idle USDC
   const { wallets } = useWallets();
+  const { setActiveWallet } = useSetActiveWallet();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
   const qc = useQueryClient();
 
-  const owner = wallets.find((w) => w.walletClientType === "privy")?.address as
-    | `0x${string}`
-    | undefined;
+  const embedded = wallets.find((w) => w.walletClientType === "privy");
+  const owner = embedded?.address as `0x${string}` | undefined;
+
+  // Sign with the Privy EMBEDDED wallet, not MetaMask — make it the active wagmi wallet first.
+  const activate = useCallback(async () => {
+    if (!embedded) throw new Error("No embedded wallet");
+    await setActiveWallet(embedded);
+  }, [embedded, setActiveWallet]);
 
   const positionsRead = useReadContracts({
     query: { enabled: Boolean(piggyAddress), refetchInterval: 8_000 },
@@ -317,6 +324,7 @@ function useChainView(): PiggyView {
 
   const ensureAccount = useCallback(async () => {
     if (!piggyAddress) throw new Error("No account address");
+    await activate();
     const code = await publicClient?.getBytecode({ address: piggyAddress });
     if (!code || code === "0x") {
       await writeContractAsync({
@@ -326,7 +334,7 @@ function useChainView(): PiggyView {
         args: [ZERO_SALT],
       });
     }
-  }, [piggyAddress, publicClient, writeContractAsync]);
+  }, [piggyAddress, publicClient, writeContractAsync, activate]);
 
   return {
     ready: Boolean(piggyAddress),
@@ -352,6 +360,7 @@ function useChainView(): PiggyView {
     harvest: async () => ({ netBase: 0n, feeBase: 0n }), // no yield on mock venues
     closePosition: async (amountBase) => {
       if (!piggyAddress) return;
+      await activate();
       const plan = buildClosePlan(
         [
           { key: "aave", base: aaveBase },
@@ -365,6 +374,7 @@ function useChainView(): PiggyView {
     addFiat: async () => {}, // testnet: fund via the crypto address (Circle faucet), not sandbox
     withdraw: async (to, amountBase) => {
       if (!piggyAddress) throw new Error("No account");
+      await activate();
       // The account only pays out to its owner; then the owner forwards to `to` if different.
       const hash = await writeContractAsync({
         address: piggyAddress,
