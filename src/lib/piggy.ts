@@ -2,10 +2,10 @@
 
 import { useCallback } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
-import { useSetActiveWallet } from "@privy-io/wagmi";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { erc20Abi } from "viem";
 import { useReadContracts, useWriteContract, usePublicClient } from "wagmi";
+import { useTxSender } from "./sponsored";
 import { usePiggy } from "./usePiggy";
 import { useSim, deployedTotalWei, accruedWei } from "./sim";
 import { optionSummary } from "./planner";
@@ -278,19 +278,12 @@ function useApiView(): PiggyView {
 function useChainView(): PiggyView {
   const { piggyAddress, balance } = usePiggy(); // account addr (predict) + idle USDC
   const { wallets } = useWallets();
-  const { setActiveWallet } = useSetActiveWallet();
-  const { writeContractAsync } = useWriteContract();
+  const { send } = useTxSender(); // one door: gasless 7702+paymaster, else self-paid
   const publicClient = usePublicClient();
   const qc = useQueryClient();
 
   const embedded = wallets.find((w) => w.walletClientType === "privy");
   const owner = embedded?.address as `0x${string}` | undefined;
-
-  // Sign with the Privy EMBEDDED wallet, not MetaMask — make it the active wagmi wallet first.
-  const activate = useCallback(async () => {
-    if (!embedded) throw new Error("No embedded wallet");
-    await setActiveWallet(embedded);
-  }, [embedded, setActiveWallet]);
 
   const positionsRead = useReadContracts({
     query: { enabled: Boolean(piggyAddress), refetchInterval: 8_000 },
@@ -324,19 +317,19 @@ function useChainView(): PiggyView {
 
   const ensureAccount = useCallback(async () => {
     if (!piggyAddress) throw new Error("No account address");
-    await activate();
     const code = await publicClient?.getBytecode({ address: piggyAddress });
     if (!code || code === "0x") {
-      const hash = await writeContractAsync({
+      const hash = await send({
         address: FACTORY_ADDRESS!,
         abi: factoryAbi,
         functionName: "createAccount",
         args: [ZERO_SALT],
       });
       // Wait until it's mined — the next executePlan needs the account to exist on-chain.
+      // (Sponsored sends already return post-inclusion; this resolves instantly then.)
       await publicClient?.waitForTransactionReceipt({ hash });
     }
-  }, [piggyAddress, publicClient, writeContractAsync, activate]);
+  }, [piggyAddress, publicClient, send]);
 
   return {
     ready: Boolean(piggyAddress),
@@ -356,13 +349,12 @@ function useChainView(): PiggyView {
       if (!piggyAddress) return;
       await ensureAccount();
       const plan = buildEarnPlan(optionSummary(risk).slices, amountBase);
-      await writeContractAsync({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
+      await send({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
       refresh();
     },
     harvest: async () => ({ netBase: 0n, feeBase: 0n }), // no yield on mock venues
     closePosition: async (amountBase) => {
       if (!piggyAddress) return;
-      await activate();
       const plan = buildClosePlan(
         [
           { key: "aave", base: aaveBase },
@@ -370,22 +362,21 @@ function useChainView(): PiggyView {
         ],
         amountBase,
       );
-      await writeContractAsync({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
+      await send({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
       refresh();
     },
     addFiat: async () => {}, // testnet: fund via the crypto address (Circle faucet), not sandbox
     withdraw: async (to, amountBase) => {
       if (!piggyAddress) throw new Error("No account");
-      await activate();
       // The account only pays out to its owner; then the owner forwards to `to` if different.
-      const hash = await writeContractAsync({
+      const hash = await send({
         address: piggyAddress,
         abi: accountAbi,
         functionName: "withdraw",
         args: [USDC_ADDRESS as `0x${string}`, amountBase],
       });
       if (owner && to.toLowerCase() !== owner.toLowerCase()) {
-        await writeContractAsync({
+        await send({
           address: USDC_ADDRESS as `0x${string}`,
           abi: erc20Abi,
           functionName: "transfer",

@@ -23,6 +23,21 @@ export const USDC_ADDRESS = USDC_BY_CHAIN[activeChain.id];
 export const USDC_DECIMALS = 6;
 
 /**
+ * Gasless (EIP-7702 + Pimlico paymaster). Có PIMLICO_API_KEY → user zero-gas:
+ * ví embedded được 7702-delegate, userOp trả phí qua paymaster của Pimlico.
+ * Địa chỉ EOA giữ nguyên → onlyOwner của SmartInvestmentAccount vẫn pass.
+ * Bỏ trống → fallback: ví embedded tự trả gas bằng ETH (cần nạp tay).
+ */
+export const PIMLICO_API_KEY = process.env.NEXT_PUBLIC_PIMLICO_API_KEY;
+export const SPONSORSHIP_POLICY_ID = process.env.NEXT_PUBLIC_SPONSORSHIP_POLICY_ID;
+/** RPC riêng cho public reads trong luồng sponsored (optional; trống = transport mặc định của chain). */
+export const RPC_URL = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || undefined;
+export const GASLESS = Boolean(PIMLICO_API_KEY);
+export const pimlicoUrl = PIMLICO_API_KEY
+  ? `https://api.pimlico.io/v2/${activeChain.id}/rpc?apikey=${PIMLICO_API_KEY}`
+  : undefined;
+
+/**
  * Cổng nạp fiat (thẻ/PayPal). On-ramp thật đi qua backend engine (POST /onramp/session).
  * Chưa cấu hình backend (NEXT_PUBLIC_API_URL trống) → DEV: mô phỏng checkout + cộng sandbox.
  */
