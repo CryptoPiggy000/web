@@ -20,7 +20,7 @@ export function SettingsSheet({
   const { user, logout, exportWallet } = usePrivy();
   const { wallets } = useWallets();
   const owner = wallets.find((w) => w.walletClientType === "privy")?.address;
-  const { activity, reset } = usePiggyView();
+  const { activity } = usePiggyView();
   const router = useRouter();
 
   const email = user?.email?.address ?? user?.google?.email ?? "—";
@@ -42,7 +42,7 @@ export function SettingsSheet({
           )}
           {owner && (
             <p className="mt-1 font-mono text-xs text-muted">
-              wallet (pays gas) <span className="select-all">{owner}</span>
+              your wallet <span className="select-all">{owner}</span>
             </p>
           )}
         </section>
@@ -76,10 +76,6 @@ export function SettingsSheet({
             Export key
           </Button>
         </section>
-
-        <Button variant="ghost" size="sm" className="self-start" onClick={reset}>
-          Reset demo data
-        </Button>
       </div>
     </Sheet>
   );
