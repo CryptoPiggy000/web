@@ -53,3 +53,12 @@ export function IconCheck({ className }: IconProps) {
     </svg>
   );
 }
+
+export function IconCopy({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={className ?? "h-[1.1em] w-[1.1em]"} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="7" y="7" width="9" height="9" rx="2" />
+      <path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+    </svg>
+  );
+}

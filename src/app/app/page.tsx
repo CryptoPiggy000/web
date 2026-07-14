@@ -32,7 +32,7 @@ export default function Home() {
   return (
     <div className="flex flex-1 flex-col">
       <header className="flex items-center justify-between px-6 py-4">
-        <span className="font-mono text-sm font-semibold text-accent">CryptoPiggy</span>
+        <span className="font-mono text-lg font-semibold tracking-tight text-accent">CryptoPiggy</span>
         <button
           onClick={() => setSheet("settings")}
           aria-label="Settings"
