@@ -1,26 +1,20 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
-import { Button } from "@/components/button";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { ready, authenticated, login } = usePrivy();
+  const { ready, authenticated } = usePrivy();
+  const router = useRouter();
 
-  if (!ready) {
-    return (
-      <main className="flex flex-1 items-center justify-center text-muted">Loading…</main>
-    );
-  }
+  // Logged-out visitors to /app go back to the "Get started" onboarding at / (one source of truth).
+  useEffect(() => {
+    if (ready && !authenticated) router.replace("/");
+  }, [ready, authenticated, router]);
 
-  if (!authenticated) {
-    return (
-      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-        <p className="text-muted">Sign in to open your piggy.</p>
-        <Button size="lg" onClick={login}>
-          Sign in
-        </Button>
-      </main>
-    );
+  if (!ready || !authenticated) {
+    return <main className="flex flex-1 items-center justify-center text-muted">Loading…</main>;
   }
 
   return <>{children}</>;
