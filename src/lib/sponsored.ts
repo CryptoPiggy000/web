@@ -12,6 +12,7 @@ import {
   encodeFunctionData,
   type Abi,
 } from "viem";
+import { toAccount } from "viem/accounts";
 import { createSmartAccountClient } from "permissionless";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
 import { to7702SimpleSmartAccount } from "permissionless/accounts";
@@ -32,13 +33,19 @@ export type ContractWrite = {
   value?: bigint;
 };
 
+const toCall = (w: ContractWrite) => ({
+  to: w.address,
+  value: w.value ?? 0n,
+  data: encodeFunctionData({ abi: w.abi, functionName: w.functionName, args: w.args ?? [] }),
+});
+
 /**
- * Một cửa gửi giao dịch duy nhất cho luồng on-chain.
+ * Một cửa gửi giao dịch cho luồng on-chain, với `sendBatch` gộp nhiều lệnh thành 1 chữ ký.
  *
- * - GASLESS (có Pimlico): gói lệnh thành 1 userOp EIP-7702, phí gas trả qua paymaster.
- *   Lần đầu ký 1 authorization (uỷ quyền EOA → SimpleAccount impl); các lần sau EOA đã có
+ * - GASLESS (có Pimlico): cả batch thành 1 userOp EIP-7702, phí gas trả qua paymaster.
+ *   Lần đầu kèm 1 authorization (uỷ quyền EOA → SimpleAccount impl); các lần sau EOA đã có
  *   code nên bỏ qua. Vì địa chỉ vẫn là EOA, `executePlan`/`withdraw` thấy msg.sender = owner.
- * - Fallback: đặt ví embedded (Privy, KHÔNG phải MetaMask) làm active rồi tự trả gas bằng ETH.
+ * - Fallback: đặt ví embedded (Privy) làm active rồi tự trả gas bằng ETH; batch chạy tuần tự.
  *
  * Cả hai trả về tx hash on-chain.
  */
@@ -52,21 +59,32 @@ export function useTxSender() {
   const embedded = wallets.find((w) => w.walletClientType === "privy");
 
   const sendSponsored = useCallback(
-    async (write: ContractWrite): Promise<`0x${string}`> => {
+    async (writes: ContractWrite[]): Promise<`0x${string}`> => {
       if (!embedded) throw new Error("No embedded wallet");
       if (!pimlicoUrl) throw new Error("Pimlico not configured");
       const eoa = embedded.address as `0x${string}`;
 
-      const owner = createWalletClient({
+      // Bọc ví Privy thành LocalAccount: có sẵn .address (khỏi eth_requestAccounts), ký định
+      // tuyến qua Privy provider. Đây đúng shape owner mà probe đã validate on-chain.
+      const privyClient = createWalletClient({
         account: eoa,
         chain: activeChain,
         transport: custom(await embedded.getEthereumProvider()),
       });
+      const owner = toAccount({
+        address: eoa,
+        // privyClient đã bind account: eoa → chữ ký định tuyến qua Privy provider.
+        signMessage: ({ message }) => privyClient.signMessage({ message }),
+        signTypedData: (typedData) =>
+          privyClient.signTypedData(typedData as Parameters<typeof privyClient.signTypedData>[0]),
+        signTransaction: () => {
+          throw new Error("Smart account signer doesn't sign raw transactions");
+        },
+      });
       const pub = createPublicClient({ chain: activeChain, transport: http(RPC_URL) });
       const pimlico = createPimlicoClient({ chain: activeChain, transport: http(pimlicoUrl) });
 
-      // Pass `address` tường minh — nếu không permissionless gọi eth_requestAccounts qua provider.
-      const account = await to7702SimpleSmartAccount({ client: pub, owner, address: eoa });
+      const account = await to7702SimpleSmartAccount({ client: pub, owner });
       const smart = createSmartAccountClient({
         account,
         chain: activeChain,
@@ -89,13 +107,8 @@ export function useTxSender() {
           });
 
       return smart.sendTransaction({
-        to: write.address,
-        value: write.value ?? 0n,
-        data: encodeFunctionData({
-          abi: write.abi,
-          functionName: write.functionName,
-          args: write.args ?? [],
-        }),
+        account,
+        calls: writes.map(toCall),
         ...(authorization ? { authorization } : {}),
         ...(SPONSORSHIP_POLICY_ID
           ? { paymasterContext: { sponsorshipPolicyId: SPONSORSHIP_POLICY_ID } }
@@ -106,24 +119,34 @@ export function useTxSender() {
   );
 
   const sendPlain = useCallback(
-    async (write: ContractWrite): Promise<`0x${string}`> => {
+    async (writes: ContractWrite[]): Promise<`0x${string}`> => {
       if (!embedded) throw new Error("No embedded wallet");
       // Ký bằng ví Privy embedded, không phải MetaMask — đặt làm active wallet trước.
       await setActiveWallet(embedded);
-      return writeContractAsync({
-        address: write.address,
-        abi: write.abi,
-        functionName: write.functionName,
-        args: write.args ?? [],
-        value: write.value,
-      });
+      let hash: `0x${string}` | undefined;
+      for (const w of writes) {
+        hash = await writeContractAsync({
+          address: w.address,
+          abi: w.abi,
+          functionName: w.functionName,
+          args: w.args ?? [],
+          value: w.value,
+        });
+        // Không gộp được tx EOA thường → chờ mined để giữ thứ tự (vd createAccount trước executePlan).
+        await publicClient?.waitForTransactionReceipt({ hash });
+      }
+      if (!hash) throw new Error("No calls");
+      return hash;
     },
-    [embedded, setActiveWallet, writeContractAsync],
+    [embedded, setActiveWallet, writeContractAsync, publicClient],
   );
+
+  const sendBatch = GASLESS ? sendSponsored : sendPlain;
 
   return {
     gasless: GASLESS,
-    send: GASLESS ? sendSponsored : sendPlain,
+    sendBatch,
+    send: useCallback((write: ContractWrite) => sendBatch([write]), [sendBatch]),
     publicClient,
   };
 }

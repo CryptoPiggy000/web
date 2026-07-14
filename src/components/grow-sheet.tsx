@@ -39,6 +39,7 @@ export function GrowSheet({
   const [earnAmount, setEarnAmount] = useState("");
   const [closeAmount, setCloseAmount] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busyMsg, setBusyMsg] = useState("Working on it");
   const [result, setResult] = useState<{ title: string; sub?: string } | null>(null);
 
   const toWei = (s: string) => {
@@ -66,6 +67,7 @@ export function GrowSheet({
 
   const startEarning = async () => {
     if (!picked || !earnValid || busy) return;
+    setBusyMsg("Putting your money to work");
     setBusy(true);
     try {
       await view.earn(earnWei, picked);
@@ -79,6 +81,7 @@ export function GrowSheet({
 
   const doHarvest = async () => {
     if (busy) return;
+    setBusyMsg("Collecting your interest");
     setBusy(true);
     try {
       const r = await view.harvest();
@@ -96,6 +99,7 @@ export function GrowSheet({
 
   const doClose = async () => {
     if (!closeValid || busy) return;
+    setBusyMsg("Moving your money back");
     setBusy(true);
     try {
       await view.closePosition(closeWei);
@@ -123,8 +127,8 @@ export function GrowSheet({
       ) : busy ? (
         <div className="flex flex-col items-center gap-3 py-10 text-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-line border-t-accent" />
-          <p className="font-medium">Confirm in your wallet</p>
-          <p className="text-sm text-muted">Then hang tight while it lands on-chain.</p>
+          <p className="font-medium">{busyMsg}…</p>
+          <p className="text-sm text-muted">This only takes a moment.</p>
         </div>
       ) : (
         <div className="flex flex-col gap-5">
