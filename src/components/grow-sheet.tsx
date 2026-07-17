@@ -104,6 +104,7 @@ export function GrowSheet({
 
   const startEarning = async () => {
     if (!picked || !earnValid || busy) return;
+    setPlanDetail(null); // leave the detail view so the busy spinner + result show
     setBusy(true);
     try {
       await view.earn(earnWei, picked);

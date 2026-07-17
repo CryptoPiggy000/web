@@ -2,9 +2,12 @@
 
 import { usePrivy } from "@privy-io/react-auth";
 import { Button } from "@/components/button";
+import { DEV_WALLET } from "@/lib/piggy";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { ready, authenticated, login } = usePrivy();
+
+  if (DEV_WALLET) return <>{children}</>; // local anvil demo — no login (mock wallet)
 
   if (!ready) {
     return (
