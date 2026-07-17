@@ -1,21 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sheet } from "./sheet";
 import { Button } from "./button";
 import { SheetSuccess } from "./sheet-success";
 import { HeroBalance } from "./hero-balance";
 import { IconPlus, IconTrendUp } from "./icons";
-import { usePiggyView } from "@/lib/piggy";
+import { usePiggyView, STRATEGY_ID } from "@/lib/piggy";
 import { optionSummary } from "@/lib/planner";
+import { api, API_MODE, type Strategy, type PlanDetail } from "@/lib/api";
 import { fmtUsd } from "@/lib/format";
 import type { RiskTolerance } from "@/lib/types";
 
 const CHOICES: { value: RiskTolerance; label: string }[] = [
   { value: "khong", label: "Safe" },
   { value: "mot-chut", label: "Balanced" },
-  { value: "thoai-mai", label: "Higher yield" },
+  { value: "thoai-mai", label: "Bold" },
 ];
+
+// bps → signed % (e.g. -6234 → "−62%")
+const pctBps = (b: number) => `${b >= 0 ? "+" : "−"}${Math.abs(Math.round(b / 100))}%`;
 
 const BAR_TONE = ["bg-accent", "bg-accent/55", "bg-[#c8a08f]"];
 
@@ -40,6 +44,24 @@ export function GrowSheet({
   const [closeAmount, setCloseAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ title: string; sub?: string } | null>(null);
+  const [strategies, setStrategies] = useState<Record<string, Strategy>>({});
+  const [planDetail, setPlanDetail] = useState<PlanDetail | null>(null);
+  const [loadingPlan, setLoadingPlan] = useState(false);
+
+  // In API mode, pull the engine's live suggestions (v2: crypto-inclusive) when the sheet opens.
+  useEffect(() => {
+    if (!open || !API_MODE) return;
+    let alive = true;
+    api
+      .strategies("1y")
+      .then((r) => {
+        if (alive) setStrategies(Object.fromEntries(r.strategies.map((s) => [s.id, s])));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [open]);
 
   const toWei = (s: string) => {
     try {
@@ -56,11 +78,27 @@ export function GrowSheet({
 
   const summary = picked ? optionSummary(picked) : null;
   const projectedYear = summary ? (Number(earnWei) / 1e6) * (summary.yieldApy / 100) : 0;
+  // The engine's live v2 suggestion for the picked strategy (API mode). Carries the crypto exposure.
+  const pickedStrategy = picked ? strategies[STRATEGY_ID[picked]] : undefined;
 
   // User pressing "cancel" in the wallet popup isn't an error — swallow it.
   const fail = (e: unknown) => {
     if (!/reject|denied|cancel/i.test(String(e))) {
       setResult({ title: "Couldn't complete", sub: "Please try again." });
+    }
+  };
+
+  // Fetch the detailed plan (allocation + on-chain actions) for the picked strategy + amount.
+  const viewPlan = async () => {
+    if (!picked || !earnValid || loadingPlan) return;
+    setLoadingPlan(true);
+    try {
+      const p = await api.plan({ strategy: STRATEGY_ID[picked], amount: earnWei.toString(), term: "1y" });
+      setPlanDetail(p);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setLoadingPlan(false);
     }
   };
 
@@ -109,6 +147,7 @@ export function GrowSheet({
 
   const close = () => {
     setResult(null);
+    setPlanDetail(null);
     setEarnAmount("");
     setCloseAmount("");
     onClose();
@@ -116,7 +155,88 @@ export function GrowSheet({
 
   return (
     <Sheet open={open} onClose={close} title="Earn">
-      {result ? (
+      {planDetail ? (
+        <div className="flex flex-col gap-4">
+          {/* the mix: savings vs crypto */}
+          <div>
+            <div className="flex h-2.5 overflow-hidden rounded-full">
+              {planDetail.summary.savingsPct > 0 && (
+                <div style={{ width: `${planDetail.summary.savingsPct}%` }} className="bg-accent" />
+              )}
+              {planDetail.summary.cryptoPct > 0 && (
+                <div style={{ width: `${planDetail.summary.cryptoPct}%` }} className="bg-[#c8a08f]" />
+              )}
+            </div>
+            <div className="mt-1.5 flex justify-between text-xs text-muted">
+              <span>{planDetail.summary.savingsPct}% savings</span>
+              <span>{planDetail.summary.cryptoPct}% crypto</span>
+            </div>
+          </div>
+
+          {/* steady + growth */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl border border-line bg-card p-3">
+              <p className="text-xs text-muted">Steady · savings</p>
+              <p className="mt-0.5 font-semibold text-good">
+                ≈{(planDetail.summary.blendedYieldBps / 100).toFixed(1)}%/yr
+              </p>
+            </div>
+            <div className="rounded-xl border border-line bg-card p-3">
+              <p className="text-xs text-muted">Growth · crypto</p>
+              <p className="mt-0.5 font-semibold text-[#c8a08f]">
+                {pctBps(planDetail.summary.cryptoExpectedBps)} typical
+              </p>
+              <p className="text-xs text-muted">
+                {pctBps(planDetail.summary.cryptoDownsideBps)} … {pctBps(planDetail.summary.cryptoUpsideBps)}
+              </p>
+            </div>
+          </div>
+
+          {/* per-venue allocation */}
+          <ul className="space-y-2 text-sm">
+            {planDetail.allocation.map((a) => (
+              <li key={a.position_id} className="flex items-center gap-2.5">
+                <span
+                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${a.class === "crypto" ? "bg-[#c8a08f]" : "bg-accent"}`}
+                />
+                <span className="flex-1">{a.symbol}</span>
+                <span className="text-muted">{a.pct}%</span>
+                <span className="w-28 text-right text-muted">
+                  {a.class === "crypto"
+                    ? `${pctBps(a.expected_return_bps)} typ.`
+                    : `≈${(a.apy_bps / 100).toFixed(1)}%/yr`}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {/* on-chain steps */}
+          <div className="rounded-xl border border-line bg-paper p-3">
+            <p className="mb-2 text-xs font-medium text-muted">
+              On-chain steps you sign ({planDetail.actions.length})
+            </p>
+            <ul className="space-y-1 font-mono text-xs">
+              {planDetail.actions.map((act, i) => (
+                <li key={i} className="flex justify-between">
+                  <span>{act.kind === 0 ? "Deposit" : act.kind === 1 ? "Withdraw" : "Buy crypto"}</span>
+                  <span className="text-muted">{fmtUsd(BigInt(act.amount || "0"))}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="text-xs text-muted">{planDetail.reasoning}</p>
+
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setPlanDetail(null)}>
+              Back
+            </Button>
+            <Button full icon={<IconTrendUp />} disabled={busy} onClick={startEarning}>
+              {busy ? "Working…" : "Start earning"}
+            </Button>
+          </div>
+        </div>
+      ) : result ? (
         <SheetSuccess title={result.title} onDone={close}>
           {result.sub}
         </SheetSuccess>
@@ -154,6 +274,7 @@ export function GrowSheet({
                 <div className="flex flex-col gap-2">
                   {CHOICES.map((c) => {
                     const s = optionSummary(c.value);
+                    const bs = strategies[STRATEGY_ID[c.value]]; // engine's live v2 suggestion (API mode)
                     return (
                       <button
                         key={c.value}
@@ -163,44 +284,103 @@ export function GrowSheet({
                         }`}
                       >
                         <span className="font-medium">{c.label}</span>
-                        <span className="text-sm text-good">≈{s.yieldApy.toFixed(1)}%/yr</span>
+                        {bs ? (
+                          <span className="flex items-center gap-2 text-sm">
+                            {bs.cryptoPct > 0 && (
+                              <span className="rounded-full bg-[#c8a08f]/15 px-2 py-0.5 text-xs text-[#c8a08f]">
+                                {bs.cryptoPct}% crypto
+                              </span>
+                            )}
+                            <span className="text-good">~{(bs.expectedReturnBps / 100).toFixed(0)}%/yr</span>
+                          </span>
+                        ) : (
+                          <span className="text-sm text-good">≈{s.yieldApy.toFixed(1)}%/yr</span>
+                        )}
                       </button>
                     );
                   })}
                 </div>
 
                 {/* 2 — after picking: allocation preview, then how much (near the button) */}
-                {picked && summary && (
+                {picked && (
                   <>
-                    <div className="rounded-xl border border-line bg-card p-4">
-                      {summary.slices.length > 1 && (
-                        <div className="mb-4 flex h-2.5 overflow-hidden rounded-full">
-                          {summary.slices.map((s, i) => (
-                            <div
-                              key={s.key}
-                              style={{ width: `${s.percent}%` }}
-                              className={BAR_TONE[i % BAR_TONE.length]}
-                            />
-                          ))}
+                    {pickedStrategy ? (
+                      // engine v2 (API mode): the savings/crypto mix + expected range over a year
+                      <div className="rounded-xl border border-line bg-card p-4">
+                        <div className="mb-3 flex h-2.5 overflow-hidden rounded-full">
+                          {pickedStrategy.savingsPct > 0 && (
+                            <div style={{ width: `${pickedStrategy.savingsPct}%` }} className="bg-accent" />
+                          )}
+                          {pickedStrategy.cryptoPct > 0 && (
+                            <div style={{ width: `${pickedStrategy.cryptoPct}%` }} className="bg-[#c8a08f]" />
+                          )}
                         </div>
-                      )}
-                      <ul className="space-y-2.5 text-sm">
-                        {summary.slices.map((s, i) => (
-                          <li key={s.key} className="flex items-center gap-2.5">
-                            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${BAR_TONE[i % BAR_TONE.length]}`} />
-                            <span className="flex-1">{s.name}</span>
-                            <span className="text-muted">{s.percent}%</span>
-                            <span className="w-20 text-right text-good">≈{s.apy}%/yr</span>
+                        <ul className="space-y-2 text-sm">
+                          <li className="flex items-center gap-2.5">
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />
+                            <span className="flex-1">Savings (USDC)</span>
+                            <span className="text-muted">{pickedStrategy.savingsPct}%</span>
+                            <span className="w-20 text-right text-good">
+                              ≈{(pickedStrategy.apyBps / 100).toFixed(1)}%/yr
+                            </span>
                           </li>
-                        ))}
-                      </ul>
-                      <div className="mt-4 flex justify-between border-t border-line pt-3 text-sm">
-                        <span className="text-muted">Est. earnings in a year</span>
-                        <span className="font-medium text-good">
-                          ≈{fmtUsd(BigInt(Math.round(projectedYear * 1e6)))}
-                        </span>
+                          {pickedStrategy.cryptoPct > 0 && (
+                            <li className="flex items-center gap-2.5">
+                              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#c8a08f]" />
+                              <span className="flex-1">Crypto (BTC/ETH)</span>
+                              <span className="text-muted">{pickedStrategy.cryptoPct}%</span>
+                              <span className="w-20 text-right text-[#c8a08f]">
+                                {pctBps(pickedStrategy.upsideBps)} up
+                              </span>
+                            </li>
+                          )}
+                        </ul>
+                        <div className="mt-3 flex justify-between border-t border-line pt-3 text-sm">
+                          <span className="text-muted">Expected in a year</span>
+                          <span className="font-medium">
+                            {pctBps(pickedStrategy.expectedReturnBps)}{" "}
+                            <span className="text-muted">
+                              ({pctBps(pickedStrategy.downsideBps)}…{pctBps(pickedStrategy.upsideBps)})
+                            </span>
+                          </span>
+                        </div>
+                        {pickedStrategy.cryptoPct > 0 && (
+                          <p className="mt-2 text-xs text-muted">
+                            Includes crypto — the price can swing. “View plan” shows the full breakdown.
+                          </p>
+                        )}
                       </div>
-                    </div>
+                    ) : summary ? (
+                      <div className="rounded-xl border border-line bg-card p-4">
+                        {summary.slices.length > 1 && (
+                          <div className="mb-4 flex h-2.5 overflow-hidden rounded-full">
+                            {summary.slices.map((s, i) => (
+                              <div
+                                key={s.key}
+                                style={{ width: `${s.percent}%` }}
+                                className={BAR_TONE[i % BAR_TONE.length]}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        <ul className="space-y-2.5 text-sm">
+                          {summary.slices.map((s, i) => (
+                            <li key={s.key} className="flex items-center gap-2.5">
+                              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${BAR_TONE[i % BAR_TONE.length]}`} />
+                              <span className="flex-1">{s.name}</span>
+                              <span className="text-muted">{s.percent}%</span>
+                              <span className="w-20 text-right text-good">≈{s.apy}%/yr</span>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-4 flex justify-between border-t border-line pt-3 text-sm">
+                          <span className="text-muted">Est. earnings in a year</span>
+                          <span className="font-medium text-good">
+                            ≈{fmtUsd(BigInt(Math.round(projectedYear * 1e6)))}
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
 
                     <label className="flex flex-col gap-1.5">
                       <span className="text-sm font-medium">How much to earn</span>
@@ -225,7 +405,17 @@ export function GrowSheet({
                   </>
                 )}
 
-                {/* 3 — go */}
+                {/* 3 — view the detailed plan (engine, API mode), then go */}
+                {pickedStrategy && (
+                  <Button
+                    variant="secondary"
+                    full
+                    disabled={!earnValid || loadingPlan}
+                    onClick={viewPlan}
+                  >
+                    {loadingPlan ? "Loading plan…" : "View plan"}
+                  </Button>
+                )}
                 <Button full icon={<IconTrendUp />} disabled={!picked || !earnValid || busy} onClick={startEarning}>
                   {busy ? "Working…" : "Start earning"}
                 </Button>
