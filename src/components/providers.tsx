@@ -50,6 +50,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
         embeddedWallets: {
           ethereum: { createOnLogin: "users-without-wallets" },
+          // Ký ngầm — không hiện popup hex "Sign message" của Privy. App tự dựng giao dịch
+          // và user đã đồng ý khi bấm nút, nên hiển thị message thân thiện của app là đủ.
+          showWalletUIs: false,
         },
         defaultChain: activeChain,
         supportedChains: [sepolia, base, foundry],

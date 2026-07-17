@@ -87,8 +87,8 @@ export function WithdrawSheet({
       ) : busy ? (
         <div className="flex flex-col items-center gap-3 py-10 text-center">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-line border-t-accent" />
-          <p className="font-medium">Confirm in your wallet</p>
-          <p className="text-sm text-muted">Then hang tight while it sends.</p>
+          <p className="font-medium">Sending to your wallet…</p>
+          <p className="text-sm text-muted">This only takes a moment.</p>
         </div>
       ) : (
         <div className="flex flex-col gap-4">

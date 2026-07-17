@@ -2,12 +2,12 @@
 
 import { useCallback, useMemo } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
-import { useSetActiveWallet } from "@privy-io/wagmi";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPublicClient, createWalletClient, http, parseAbi, erc20Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { useReadContracts, useWriteContract, usePublicClient } from "wagmi";
+import { useTxSender, type ContractWrite } from "./sponsored";
 import { usePiggy } from "./usePiggy";
 import { useSim, deployedTotalWei, accruedWei } from "./sim";
 import { optionSummary } from "./planner";
@@ -282,19 +282,12 @@ function useApiView(): PiggyView {
 function useChainView(): PiggyView {
   const { piggyAddress, balance } = usePiggy(); // account addr (predict) + idle USDC
   const { wallets } = useWallets();
-  const { setActiveWallet } = useSetActiveWallet();
-  const { writeContractAsync } = useWriteContract();
+  const { send, sendBatch } = useTxSender(); // one door: gasless 7702+paymaster, else self-paid
   const publicClient = usePublicClient();
   const qc = useQueryClient();
 
   const embedded = wallets.find((w) => w.walletClientType === "privy");
   const owner = embedded?.address as `0x${string}` | undefined;
-
-  // Sign with the Privy EMBEDDED wallet, not MetaMask — make it the active wagmi wallet first.
-  const activate = useCallback(async () => {
-    if (!embedded) throw new Error("No embedded wallet");
-    await setActiveWallet(embedded);
-  }, [embedded, setActiveWallet]);
 
   const positionsRead = useReadContracts({
     query: { enabled: Boolean(piggyAddress), refetchInterval: 8_000 },
@@ -326,21 +319,12 @@ function useChainView(): PiggyView {
     qc.invalidateQueries(); // re-reads balance + positions
   }, [qc]);
 
-  const ensureAccount = useCallback(async () => {
-    if (!piggyAddress) throw new Error("No account address");
-    await activate();
+  // Is the piggy already deployed on-chain? First earn bundles createAccount into the same op.
+  const needsCreate = useCallback(async () => {
+    if (!piggyAddress) return false;
     const code = await publicClient?.getBytecode({ address: piggyAddress });
-    if (!code || code === "0x") {
-      const hash = await writeContractAsync({
-        address: FACTORY_ADDRESS!,
-        abi: factoryAbi,
-        functionName: "createAccount",
-        args: [ZERO_SALT],
-      });
-      // Wait until it's mined — the next executePlan needs the account to exist on-chain.
-      await publicClient?.waitForTransactionReceipt({ hash });
-    }
-  }, [piggyAddress, publicClient, writeContractAsync, activate]);
+    return !code || code === "0x";
+  }, [piggyAddress, publicClient]);
 
   return {
     ready: Boolean(piggyAddress),
@@ -358,7 +342,6 @@ function useChainView(): PiggyView {
     bumpValueUsd: Number(total) / 1e6,
     earn: async (amountBase, risk) => {
       if (!piggyAddress) return;
-      await ensureAccount();
       // Execute the ENGINE's plan when the backend + an on-chain crypto venue are configured (API mode +
       // a swap router on this chain); otherwise fall back to the client-static USDC plan.
       let plan;
@@ -368,13 +351,18 @@ function useChainView(): PiggyView {
       } else {
         plan = buildEarnPlan(optionSummary(risk).slices, amountBase);
       }
-      await writeContractAsync({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
+      // First-ever earn: create the piggy + deposit in ONE signature. After that, just deposit.
+      const calls: ContractWrite[] = [];
+      if (await needsCreate()) {
+        calls.push({ address: FACTORY_ADDRESS!, abi: factoryAbi, functionName: "createAccount", args: [ZERO_SALT] });
+      }
+      calls.push({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
+      await sendBatch(calls);
       refresh();
     },
     harvest: async () => ({ netBase: 0n, feeBase: 0n }), // no yield on mock venues
     closePosition: async (amountBase) => {
       if (!piggyAddress) return;
-      await activate();
       const plan = buildClosePlan(
         [
           { key: "aave", base: aaveBase },
@@ -382,28 +370,20 @@ function useChainView(): PiggyView {
         ],
         amountBase,
       );
-      await writeContractAsync({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
+      await send({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
       refresh();
     },
     addFiat: async () => {}, // testnet: fund via the crypto address (Circle faucet), not sandbox
     withdraw: async (to, amountBase) => {
       if (!piggyAddress) throw new Error("No account");
-      await activate();
-      // The account only pays out to its owner; then the owner forwards to `to` if different.
-      const hash = await writeContractAsync({
-        address: piggyAddress,
-        abi: accountAbi,
-        functionName: "withdraw",
-        args: [USDC_ADDRESS as `0x${string}`, amountBase],
-      });
+      // The account only pays out to its owner; if `to` differs, forward in the SAME op.
+      const calls: ContractWrite[] = [
+        { address: piggyAddress, abi: accountAbi, functionName: "withdraw", args: [USDC_ADDRESS as `0x${string}`, amountBase] },
+      ];
       if (owner && to.toLowerCase() !== owner.toLowerCase()) {
-        await writeContractAsync({
-          address: USDC_ADDRESS as `0x${string}`,
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [to, amountBase],
-        });
+        calls.push({ address: USDC_ADDRESS as `0x${string}`, abi: erc20Abi, functionName: "transfer", args: [to, amountBase] });
       }
+      const hash = await sendBatch(calls);
       refresh();
       return { txHash: hash };
     },
