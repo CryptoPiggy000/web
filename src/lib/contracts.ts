@@ -1,5 +1,5 @@
-import { encodeAbiParameters, keccak256, parseAbi, zeroAddress } from "viem";
-import { FACTORY_ADDRESS, USDC_ADDRESS } from "./chain";
+import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbi, zeroAddress } from "viem";
+import { FACTORY_ADDRESS, USDC_ADDRESS, activeChain } from "./chain";
 
 // Deployed on Ethereum Sepolia (contracts/DEPLOYMENTS.md). Mocks over real Circle USDC.
 export const REGISTRY_ADDRESS = "0xe7F24D9963d992b2d3b838c615d41E94Ca8F8bd1" as const;
@@ -95,6 +95,59 @@ export function buildEarnPlan(
       return deposit(pos.id, (amountBase * BigInt(s.percent)) / 100n);
     })
     .filter((a): a is PlanAction => a !== null && a.amount > 0n);
+}
+
+// The crypto venue + swap router per chain, for executing the ENGINE's crypto slice on-chain. Anvil
+// (31337) = the DeployLocal deterministic deploy (wstETH stands in for the crypto held asset; the mock
+// router swaps USDC→wstETH). Absent on a chain → the engine plan can't execute crypto there (savings only).
+const CRYPTO_VENUES: Record<number, { aave: `0x${string}`; wsteth: `0x${string}`; router: `0x${string}` }> = {
+  31337: {
+    aave: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+    wsteth: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+    router: "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+  },
+};
+export const cryptoVenues = CRYPTO_VENUES[activeChain.id];
+
+const routerAbi = parseAbi([
+  "function swap(address assetIn, address assetOut, uint256 amountIn, uint256 minOut, address to)",
+]);
+
+/**
+ * Map the ENGINE's savings/crypto split onto the on-chain venues, so the account executes the real plan:
+ * DEPOSIT the savings slice into aave, and SWAP the crypto slice USDC→wstETH via the approved router
+ * (routeData = the router.swap call the account relays; its balance-delta check enforces minOut). This is
+ * the anvil demo path; mainnet would fill routeData/minOut from a real aggregator (0x/1inch) quote instead.
+ */
+export function buildEnginePlan(
+  summary: { savingsPct: number; cryptoPct: number },
+  amountBase: bigint,
+  account: `0x${string}`,
+): PlanAction[] {
+  const v = cryptoVenues;
+  if (!v) return [];
+  const savingsAmt = (amountBase * BigInt(summary.savingsPct)) / 100n;
+  const cryptoAmt = amountBase - savingsAmt;
+  const actions: PlanAction[] = [];
+  if (savingsAmt > 0n) actions.push(deposit(positionId(AAVE_KIND, v.aave), savingsAmt));
+  if (cryptoAmt > 0n) {
+    const routeData = encodeFunctionData({
+      abi: routerAbi,
+      functionName: "swap",
+      args: [USDC_ADDRESS as `0x${string}`, v.wsteth, cryptoAmt, 0n, account],
+    });
+    actions.push({
+      kind: 2, // SWAP
+      positionId: `0x${"00".repeat(32)}`,
+      assetIn: USDC_ADDRESS as `0x${string}`,
+      assetOut: v.wsteth,
+      router: v.router,
+      amount: cryptoAmt,
+      minOut: 0n,
+      routeData,
+    });
+  }
+  return actions;
 }
 
 /** Build the WITHDRAW plan to pull `amountBase` out of the pool, proportional to each position. */

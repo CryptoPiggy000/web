@@ -1,8 +1,12 @@
-import { base, sepolia } from "viem/chains";
+import { base, foundry, sepolia } from "viem/chains";
 
-/** Chain đang chạy — ẩn hoàn toàn khỏi user. Đổi qua env, mặc định Ethereum Sepolia cho dev. */
+/** Chain đang chạy — ẩn hoàn toàn khỏi user. Đổi qua env; "anvil" = local demo (foundry 31337). */
 export const activeChain =
-  process.env.NEXT_PUBLIC_CHAIN === "base" ? base : sepolia;
+  process.env.NEXT_PUBLIC_CHAIN === "base"
+    ? base
+    : process.env.NEXT_PUBLIC_CHAIN === "anvil"
+      ? foundry
+      : sepolia;
 
 /**
  * Địa chỉ AccountFactory trên Base (repo contracts, Vũ deploy).

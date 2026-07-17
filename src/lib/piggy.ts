@@ -21,7 +21,9 @@ import {
   aaveAbi,
   vaultAbi,
   buildEarnPlan,
+  buildEnginePlan,
   buildClosePlan,
+  cryptoVenues,
 } from "./contracts";
 import type { ActivityEntry, RiskTolerance } from "./types";
 
@@ -355,7 +357,15 @@ function useChainView(): PiggyView {
     earn: async (amountBase, risk) => {
       if (!piggyAddress) return;
       await ensureAccount();
-      const plan = buildEarnPlan(optionSummary(risk).slices, amountBase);
+      // Execute the ENGINE's plan when the backend + an on-chain crypto venue are configured (API mode +
+      // a swap router on this chain); otherwise fall back to the client-static USDC plan.
+      let plan;
+      if (API_MODE && cryptoVenues) {
+        const eng = await api.plan({ strategy: STRATEGY_ID[risk], amount: amountBase.toString(), term: "1y" });
+        plan = buildEnginePlan(eng.summary, amountBase, piggyAddress);
+      } else {
+        plan = buildEarnPlan(optionSummary(risk).slices, amountBase);
+      }
       await writeContractAsync({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
       refresh();
     },
