@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { erc20Abi } from "viem";
+import { createPublicClient, createWalletClient, http, parseAbi, erc20Abi } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { foundry } from "viem/chains";
 import { useReadContracts, useWriteContract, usePublicClient } from "wagmi";
 import { useTxSender, type ContractWrite } from "./sponsored";
 import { usePiggy } from "./usePiggy";
@@ -21,7 +23,9 @@ import {
   aaveAbi,
   vaultAbi,
   buildEarnPlan,
+  buildEnginePlan,
   buildClosePlan,
+  cryptoVenues,
 } from "./contracts";
 import type { ActivityEntry, RiskTolerance } from "./types";
 
@@ -338,7 +342,15 @@ function useChainView(): PiggyView {
     bumpValueUsd: Number(total) / 1e6,
     earn: async (amountBase, risk) => {
       if (!piggyAddress) return;
-      const plan = buildEarnPlan(optionSummary(risk).slices, amountBase);
+      // Execute the ENGINE's plan when the backend + an on-chain crypto venue are configured (API mode +
+      // a swap router on this chain); otherwise fall back to the client-static USDC plan.
+      let plan;
+      if (API_MODE && cryptoVenues) {
+        const eng = await api.plan({ strategy: STRATEGY_ID[risk], amount: amountBase.toString(), term: "1y" });
+        plan = buildEnginePlan(eng.summary, amountBase, piggyAddress);
+      } else {
+        plan = buildEarnPlan(optionSummary(risk).slices, amountBase);
+      }
       // First-ever earn: create the piggy + deposit in ONE signature. After that, just deposit.
       const calls: ContractWrite[] = [];
       if (await needsCreate()) {
@@ -379,10 +391,112 @@ function useChainView(): PiggyView {
   };
 }
 
-/** The one hook the UI uses. Bound at module load — no conditional hooks.
- *  Chain (real on-chain) when the factory is set; else backend; else the client sim. */
-export const usePiggyView: () => PiggyView = CHAIN_MODE
-  ? useChainView
-  : API_MODE
-    ? useApiView
-    : useSimView;
+// ---------------------------------------------------------------------------
+// DEV source — anvil + a hardcoded "mock-Privy" wallet (no login). LOCAL DEMO ONLY
+// (NEXT_PUBLIC_DEV_WALLET=1). Signs executePlan directly with an anvil account and scales the app's
+// 6-dec amounts to the anvil mock USDC's 18 decimals. Never used off localhost.
+// ---------------------------------------------------------------------------
+export const DEV_WALLET = process.env.NEXT_PUBLIC_DEV_WALLET === "1";
+const DEV_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // anvil #0 — PUBLIC test key, LOCAL ONLY
+const DEV_SCALE = 10n ** 12n; // app 6-dec → anvil mock USDC 18-dec
+const DEV_SALT = ("0x" + "0".repeat(64)) as `0x${string}`;
+const mintAbi = parseAbi(["function mint(address to, uint256 amount)"]);
+
+function useDevChainView(): PiggyView {
+  const qc = useQueryClient();
+  const clients = useMemo(() => {
+    const account = privateKeyToAccount(DEV_KEY);
+    const rpc = http("http://127.0.0.1:8545");
+    return {
+      account,
+      pub: createPublicClient({ chain: foundry, transport: rpc }),
+      wallet: createWalletClient({ account, chain: foundry, transport: rpc }),
+    };
+  }, []);
+  const owner = clients.account.address;
+
+  const q = useQuery({
+    queryKey: ["dev-piggy"],
+    refetchInterval: 4000,
+    queryFn: async () => {
+      const piggy = (await clients.pub.readContract({ address: FACTORY_ADDRESS!, abi: factoryAbi, functionName: "predict", args: [owner, DEV_SALT] })) as `0x${string}`;
+      const [usdc, supplied, wsteth] = await Promise.all([
+        clients.pub.readContract({ address: USDC_ADDRESS as `0x${string}`, abi: erc20Abi, functionName: "balanceOf", args: [piggy] }),
+        cryptoVenues ? clients.pub.readContract({ address: cryptoVenues.aave, abi: aaveAbi, functionName: "supplied", args: [piggy, USDC_ADDRESS as `0x${string}`] }) : Promise.resolve(0n),
+        cryptoVenues ? clients.pub.readContract({ address: cryptoVenues.wsteth, abi: erc20Abi, functionName: "balanceOf", args: [piggy] }) : Promise.resolve(0n),
+      ]);
+      return { piggy, usdc: usdc as bigint, supplied: supplied as bigint, wsteth: wsteth as bigint };
+    },
+  });
+  const piggy = q.data?.piggy;
+  const idle = (q.data?.usdc ?? 0n) / DEV_SCALE; // anvil 18-dec → app 6-dec
+  const savingsBase = (q.data?.supplied ?? 0n) / DEV_SCALE;
+  const cryptoUsd = ((q.data?.wsteth ?? 0n) * 2500n) / DEV_SCALE; // 1 wstETH = 2500 USDC (mock rate)
+  const deployed = savingsBase + cryptoUsd;
+  const total = idle + deployed;
+
+  const refresh = useCallback(() => qc.invalidateQueries({ queryKey: ["dev-piggy"] }), [qc]);
+  const ensureAccount = useCallback(async () => {
+    if (!piggy) return;
+    const code = await clients.pub.getCode({ address: piggy });
+    if (!code || code === "0x") {
+      const hash = await clients.wallet.writeContract({ address: FACTORY_ADDRESS!, abi: factoryAbi, functionName: "createAccount", args: [DEV_SALT] });
+      await clients.pub.waitForTransactionReceipt({ hash });
+    }
+  }, [piggy, clients]);
+
+  return {
+    ready: Boolean(q.data),
+    piggyAddress: piggy,
+    restingBase: idle,
+    withdrawableBase: idle,
+    deployedBase: deployed,
+    positions: [
+      ...(savingsBase > 0n ? [{ key: "aave", name: "Aave lending", base: savingsBase, apyBps: 280 }] : []),
+      ...(cryptoUsd > 0n ? [{ key: "wsteth", name: "Crypto (wstETH)", base: cryptoUsd, apyBps: 0 }] : []),
+    ],
+    apyBps: deployed > 0n ? Math.round(Number(savingsBase * 280n) / Number(deployed)) : 0,
+    activity: [],
+    empty: total === 0n,
+    earning: deployed > 0n,
+    liveTotalUsd: () => Number(total) / 1e6,
+    liveAccruedUsd: () => 0,
+    bumpValueUsd: Number(total) / 1e6,
+    earn: async (amountBase, risk) => {
+      if (!piggy) return;
+      await ensureAccount();
+      const anvilAmt = amountBase * DEV_SCALE;
+      let plan;
+      if (API_MODE && cryptoVenues) {
+        const eng = await api.plan({ strategy: STRATEGY_ID[risk], amount: anvilAmt.toString(), term: "1y" });
+        plan = buildEnginePlan(eng.summary, anvilAmt, piggy);
+      } else {
+        plan = buildEarnPlan(optionSummary(risk).slices, anvilAmt);
+      }
+      const hash = await clients.wallet.writeContract({ address: piggy, abi: accountAbi, functionName: "executePlan", args: [plan] });
+      await clients.pub.waitForTransactionReceipt({ hash });
+      refresh();
+    },
+    harvest: async () => ({ netBase: 0n, feeBase: 0n }),
+    closePosition: async () => {},
+    addFiat: async (amountUsd) => {
+      if (!piggy) return;
+      const anvilAmt = BigInt(Math.round(amountUsd * 1e6)) * DEV_SCALE;
+      const hash = await clients.wallet.writeContract({ address: USDC_ADDRESS as `0x${string}`, abi: mintAbi, functionName: "mint", args: [piggy, anvilAmt] });
+      await clients.pub.waitForTransactionReceipt({ hash });
+      refresh();
+    },
+    withdraw: async () => ({ txHash: undefined }),
+    reset: () => {},
+  };
+}
+
+/** The one hook the UI uses. Bound at module load — no conditional hooks. Dev mock-wallet (anvil,
+ *  no login) when NEXT_PUBLIC_DEV_WALLET=1; else chain when the factory is set; else backend; else sim. */
+export const usePiggyView: () => PiggyView = DEV_WALLET
+  ? useDevChainView
+  : CHAIN_MODE
+    ? useChainView
+    : API_MODE
+      ? useApiView
+      : useSimView;

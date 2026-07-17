@@ -4,14 +4,15 @@ import { PrivyProvider } from "@privy-io/react-auth";
 import { WagmiProvider, createConfig } from "@privy-io/wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http } from "wagmi";
-import { base, sepolia } from "viem/chains";
+import { base, foundry, sepolia } from "viem/chains";
 import { activeChain } from "@/lib/chain";
 
 const wagmiConfig = createConfig({
-  chains: [sepolia, base],
+  chains: [sepolia, base, foundry],
   transports: {
     [sepolia.id]: http(),
     [base.id]: http(),
+    [foundry.id]: http("http://127.0.0.1:8545"), // local anvil demo
   },
 });
 
@@ -54,7 +55,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           showWalletUIs: false,
         },
         defaultChain: activeChain,
-        supportedChains: [sepolia, base],
+        supportedChains: [sepolia, base, foundry],
       }}
     >
       <QueryClientProvider client={queryClient}>

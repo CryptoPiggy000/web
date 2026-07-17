@@ -45,6 +45,66 @@ export interface BuiltOp {
   toSign: { type: string; value: string };
 }
 
+// The engine's suggested allocations (v2, crypto-inclusive). A strategy is a savings/crypto mix with a
+// steady yield + an expected return and a downside/upside RANGE over the term — not just an APY.
+export interface StrategyMix {
+  key: string;
+  symbol: string;
+  name: string;
+  class: "savings" | "crypto";
+  pct: number;
+  apyBps: number;
+  expectedReturnBps: number;
+  downsideBps: number;
+  upsideBps: number;
+}
+export interface Strategy {
+  id: string;
+  label: string;
+  risk: number;
+  term: string;
+  savingsPct: number;
+  cryptoPct: number;
+  apyBps: number; // steady savings yield
+  expectedReturnBps: number; // overall, over the term
+  downsideBps: number;
+  upsideBps: number;
+  mix: StrategyMix[];
+}
+export interface PlanAction {
+  kind: 0 | 1 | 2; // DEPOSIT | WITHDRAW | SWAP
+  positionId: string;
+  assetIn: string;
+  assetOut: string;
+  router: string;
+  amount: string;
+  minOut: string;
+  routeData: string;
+}
+export interface PlanDetail {
+  allocation: {
+    position_id: string;
+    symbol: string;
+    class: "savings" | "crypto";
+    pct: number;
+    apy_bps: number;
+    expected_return_bps: number;
+    downside_bps: number;
+    upside_bps: number;
+  }[];
+  actions: PlanAction[];
+  summary: {
+    term: string;
+    savingsPct: number;
+    cryptoPct: number;
+    blendedYieldBps: number;
+    cryptoExpectedBps: number;
+    cryptoDownsideBps: number;
+    cryptoUpsideBps: number;
+  };
+  reasoning: string;
+}
+
 export const api = {
   async verify(privyToken: string) {
     const r = await req<{ session: string; user: { id: string; owner: string; piggy: string } }>(
@@ -55,8 +115,11 @@ export const api = {
     return r;
   },
   portfolio: () => req<Portfolio>("/me/portfolio"),
-  strategies: () =>
-    req<{ strategies: { id: string; label: string; apyBps: number }[] }>("/market/strategies"),
+  strategies: (term = "1y") =>
+    req<{ strategies: Strategy[] }>(`/market/strategies?term=${term}`),
+  // The full plan for a chosen strategy/risk + amount — the View-plan detail (allocation + actions).
+  plan: (body: { strategy?: string; risk?: number; amount?: string; term?: string; holdings?: unknown }) =>
+    req<PlanDetail>("/market/plan", { method: "POST", body }),
   activity: () =>
     req<{ items: { id: string; ts: number; type: string; summary: string; txHash?: string }[] }>(
       "/me/activity",

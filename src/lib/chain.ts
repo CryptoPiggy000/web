@@ -1,8 +1,12 @@
-import { base, sepolia } from "viem/chains";
+import { base, foundry, sepolia } from "viem/chains";
 
-/** Chain đang chạy — ẩn hoàn toàn khỏi user. Đổi qua env, mặc định Ethereum Sepolia cho dev. */
+/** Chain đang chạy — ẩn hoàn toàn khỏi user. Đổi qua env; "anvil" = local demo (foundry 31337). */
 export const activeChain =
-  process.env.NEXT_PUBLIC_CHAIN === "base" ? base : sepolia;
+  process.env.NEXT_PUBLIC_CHAIN === "base"
+    ? base
+    : process.env.NEXT_PUBLIC_CHAIN === "anvil"
+      ? foundry
+      : sepolia;
 
 /**
  * Địa chỉ AccountFactory trên Base (repo contracts, Vũ deploy).
@@ -17,6 +21,7 @@ export const FACTORY_ADDRESS = process.env.NEXT_PUBLIC_FACTORY_ADDRESS as
 const USDC_BY_CHAIN: Record<number, `0x${string}`> = {
   11155111: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", // Sepolia (Circle)
   8453: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // Base mainnet
+  31337: "0x5FbDB2315678afecb367f032d93F642f64180aa3", // anvil DeployLocal mock (18-dec)
 };
 
 export const USDC_ADDRESS = USDC_BY_CHAIN[activeChain.id];
