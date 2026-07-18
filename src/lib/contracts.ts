@@ -29,6 +29,9 @@ export const POSITIONS: Record<string, { id: `0x${string}`; apyBps: number; name
   vault: { id: positionId(ERC4626_KIND, VAULT_ADDRESS), apyBps: 410, name: "Stable-yield vault" },
 };
 
+/** The Aave WITHDRAW position id for a given pool address (anvil uses a different pool than Sepolia). */
+export const aavePositionId = (aave: `0x${string}`): `0x${string}` => positionId(AAVE_KIND, aave);
+
 export const factoryAbi = parseAbi([
   "function predict(address owner_, bytes32 userSalt) view returns (address)",
   "function createAccount(bytes32 userSalt) returns (address)",
@@ -150,19 +153,64 @@ export function buildEnginePlan(
   return actions;
 }
 
-/** Build the WITHDRAW plan to pull `amountBase` out of the pool, proportional to each position. */
-export function buildClosePlan(
-  positions: { key: string; base: bigint }[],
-  amountBase: bigint,
-): PlanAction[] {
+const ZERO_ID = `0x${"00".repeat(32)}` as `0x${string}`;
+
+/**
+ * SWAP a held token back to USDC via an approved router — the sell side of the mix (crypto → dollars).
+ * `routeData` is the router.swap call the account relays; its balance-delta check enforces `minOut`.
+ * Demo: `minOut = 0` (mock router, fixed rate). Mainnet fills `routeData`/`minOut` from an aggregator
+ * quote (0x/1inch), and that router must be `routeApproved` in the ProtocolRegistry.
+ */
+const sellForUsdc = (
+  token: `0x${string}`,
+  tokenAmount: bigint,
+  router: `0x${string}`,
+  account: `0x${string}`,
+): PlanAction => ({
+  kind: 2, // SWAP
+  positionId: ZERO_ID,
+  assetIn: token,
+  assetOut: USDC_ADDRESS as `0x${string}`,
+  router,
+  amount: tokenAmount,
+  minOut: 0n,
+  routeData: encodeFunctionData({
+    abi: routerAbi,
+    functionName: "swap",
+    args: [token, USDC_ADDRESS as `0x${string}`, tokenAmount, 0n, account],
+  }),
+});
+
+/** A position to unwind when closing. Savings → WITHDRAW; a `sell` slice → SWAP the held token to USDC. */
+export type ClosePosition = {
+  base: bigint; // position value in USD base units — sets each position's proportional share
+  key?: string; // savings: POSITIONS[key] lookup (Sepolia venues)
+  id?: `0x${string}`; // savings: explicit WITHDRAW position id (overrides key) — e.g. anvil's own aave pool
+  /** Crypto/held-asset slice: sell this token back to USDC instead of a protocol WITHDRAW. */
+  sell?: { token: `0x${string}`; tokenBalance: bigint; router: `0x${string}`; account: `0x${string}` };
+};
+
+/**
+ * Build the plan to raise `amountBase` USD by unwinding positions proportionally, back to idle USDC.
+ * Savings positions emit a WITHDRAW; a crypto slice emits a SWAP token→USDC, selling the *same*
+ * proportional fraction of its token balance. Full close (`amountBase >= total`) unwinds everything.
+ */
+export function buildClosePlan(positions: ClosePosition[], amountBase: bigint): PlanAction[] {
   const total = positions.reduce((a, p) => a + p.base, 0n);
   if (total === 0n) return [];
+  const full = amountBase >= total;
   return positions
     .map((p) => {
-      const pos = POSITIONS[p.key];
-      if (!pos) return null;
-      const cut = amountBase >= total ? p.base : (amountBase * p.base) / total;
-      return withdrawAction(pos.id, cut);
+      if (p.sell) {
+        // sell the same fraction of the token balance that this position contributes to the raise
+        const tokenIn = full ? p.sell.tokenBalance : (amountBase * p.sell.tokenBalance) / total;
+        if (tokenIn <= 0n) return null;
+        return sellForUsdc(p.sell.token, tokenIn, p.sell.router, p.sell.account);
+      }
+      const id = p.id ?? (p.key ? POSITIONS[p.key]?.id : undefined);
+      if (!id) return null;
+      const cut = full ? p.base : (amountBase * p.base) / total;
+      return withdrawAction(id, cut);
     })
     .filter((a): a is PlanAction => a !== null && a.amount > 0n);
 }

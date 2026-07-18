@@ -25,6 +25,7 @@ import {
   buildEarnPlan,
   buildEnginePlan,
   buildClosePlan,
+  aavePositionId,
   cryptoVenues,
 } from "./contracts";
 import type { ActivityEntry, RiskTolerance } from "./types";
@@ -478,7 +479,31 @@ function useDevChainView(): PiggyView {
       refresh();
     },
     harvest: async () => ({ netBase: 0n, feeBase: 0n }),
-    closePosition: async () => {},
+    // Unwind `amountBase` USD back to idle USDC, proportionally: WITHDRAW the aave savings + SELL the
+    // wstETH crypto slice back to USDC (the sell-back path). All amounts in anvil 18-dec.
+    closePosition: async (amountBase) => {
+      if (!piggy) return;
+      const wsteth = q.data?.wsteth ?? 0n; // anvil 18-dec wstETH balance
+      const supplied = q.data?.supplied ?? 0n; // anvil 18-dec USDC supplied to aave
+      const plan = buildClosePlan(
+        [
+          ...(supplied > 0n ? [{ id: aavePositionId(cryptoVenues!.aave), base: supplied }] : []),
+          ...(wsteth > 0n && cryptoVenues
+            ? [
+                {
+                  base: wsteth * 2500n, // value in anvil 18-dec USD (mock rate 1 wstETH = 2500 USDC)
+                  sell: { token: cryptoVenues.wsteth, tokenBalance: wsteth, router: cryptoVenues.router, account: piggy },
+                },
+              ]
+            : []),
+        ],
+        amountBase * DEV_SCALE, // app 6-dec USD → anvil 18-dec USD to raise
+      );
+      if (plan.length === 0) return;
+      const hash = await clients.wallet.writeContract({ address: piggy, abi: accountAbi, functionName: "executePlan", args: [plan] });
+      await clients.pub.waitForTransactionReceipt({ hash });
+      refresh();
+    },
     addFiat: async (amountUsd) => {
       if (!piggy) return;
       const anvilAmt = BigInt(Math.round(amountUsd * 1e6)) * DEV_SCALE;
@@ -486,7 +511,20 @@ function useDevChainView(): PiggyView {
       await clients.pub.waitForTransactionReceipt({ hash });
       refresh();
     },
-    withdraw: async () => ({ txHash: undefined }),
+    // The account pays out only to its owner (custody invariant); owner = the dev mock wallet (anvil #0).
+    // If withdrawing elsewhere, forward from the owner EOA in a second tx (mirrors useChainView).
+    withdraw: async (to, amountBase) => {
+      if (!piggy) return { txHash: undefined };
+      const anvilAmt = amountBase * DEV_SCALE;
+      const hash = await clients.wallet.writeContract({ address: piggy, abi: accountAbi, functionName: "withdraw", args: [USDC_ADDRESS as `0x${string}`, anvilAmt] });
+      await clients.pub.waitForTransactionReceipt({ hash });
+      if (to.toLowerCase() !== owner.toLowerCase()) {
+        const t = await clients.wallet.writeContract({ address: USDC_ADDRESS as `0x${string}`, abi: erc20Abi, functionName: "transfer", args: [to, anvilAmt] });
+        await clients.pub.waitForTransactionReceipt({ hash: t });
+      }
+      refresh();
+      return { txHash: hash };
+    },
     reset: () => {},
   };
 }
