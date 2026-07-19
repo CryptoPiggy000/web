@@ -14,15 +14,21 @@ Docs:
 > The local **contracts demo** (the viem single-page app that drives anvil) lives in the contracts
 > repo: [`contracts/demo/`](https://github.com/CryptoPiggy000/contracts/tree/main/demo).
 
-## Status — Phase 0
+## Status — wired to the live engine, not yet on Vercel
 
-Runs today on **Ethereum Sepolia** with **no dependency on the contracts/backend repos**:
+The app now talks to the **live engine** and has the real earn/close paths built:
 
-- Real: Privy login (email/Google) + embedded wallet, **USDC** deposit (QR + balance polling)
-  and withdraw, activity.
-- Simulated (localStorage, `src/lib/sim.ts`): the earn strategies/planner, yield accrual,
-  harvest, and close-position. Fiat on-ramp (card/PayPal) has a **dev sandbox** that simulates
-  the checkout.
+- **v2 engine chooser + View plan** — strategies + full plan come from the deployed backend's
+  `/market/*` (`NEXT_PUBLIC_API_URL` → `https://cryptopiggy-backend-production.ai-suggestion.workers.dev`),
+  i.e. the real market-intelligence planner over real Base data.
+- **Execution** — the earn flow builds the engine's plan and signs `executePlan`; the **sell-back path**
+  (crypto → USDC on close) is wired; verified end-to-end on a local anvil via the mock-Privy dev wallet.
+- **First-run Terms acceptance gate** (`components/terms-gate.tsx`) + `/terms` + `/privacy` pages.
+- Still Privy login (email/Google) + embedded wallet; gasless earn via EIP-7702 + paymaster.
+
+**Not yet deployed to Vercel**, and on-chain execution needs the **Base contracts** (`../contracts`
+`DeployBase`, not yet broadcast). Legal copy in the Terms/Privacy pages is a template pending review.
+Some flows (fiat on-ramp, portfolio) still use the local sim (`src/lib/sim.ts`) until wired.
 - Piggy address = the embedded wallet itself. When `AccountFactory` is deployed, set
   `NEXT_PUBLIC_FACTORY_ADDRESS` and the app switches to the counterfactual address via `predict()`.
 - Single screen + bottom sheets (no sub-routes). Two-bucket money model (Resting / Earning).
