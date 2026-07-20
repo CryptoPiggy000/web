@@ -81,6 +81,14 @@ export interface PlanAction {
   minOut: string;
   routeData: string;
 }
+export interface SwapQuote {
+  provider: string; // which aggregator won (0x | kyberswap)
+  router: string; // approve + call target
+  routeData: string; // opaque calldata to relay
+  minOut: string; // minimum received (wei)
+  buyAmount: string; // expected output (wei)
+  quotedBy?: { provider: string; buyAmount: string }[]; // every provider's quote (transparency)
+}
 export interface PlanDetail {
   allocation: {
     position_id: string;
@@ -120,6 +128,10 @@ export const api = {
   // The full plan for a chosen strategy/risk + amount — the View-plan detail (allocation + actions).
   plan: (body: { strategy?: string; risk?: number; amount?: string; term?: string; holdings?: unknown }) =>
     req<PlanDetail>("/market/plan", { method: "POST", body }),
+  // Best DEX-aggregator swap quote (0x + KyberSwap, best fill) for a held-asset buy/sell. Approve-and-call:
+  // the client drops `router`/`routeData`/`minOut` straight into a SWAP Action; the account enforces minOut.
+  quote: (body: { sellToken: string; buyToken: string; sellAmount: string; taker: string; slippageBps?: number; chainId?: number }) =>
+    req<SwapQuote>("/market/quote", { method: "POST", body }),
   activity: () =>
     req<{ items: { id: string; ts: number; type: string; summary: string; txHash?: string }[] }>(
       "/me/activity",

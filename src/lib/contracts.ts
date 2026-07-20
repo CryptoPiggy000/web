@@ -109,6 +109,13 @@ const CRYPTO_VENUES: Record<number, { aave: `0x${string}`; wsteth: `0x${string}`
     wsteth: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
     router: "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
   },
+  // Base mainnet: `wsteth` = the held-asset token to buy (WETH); the swap ROUTER is dynamic — it comes
+  // from the DEX-aggregator quote (api.quote → /market/quote → 0x/KyberSwap), not a fixed router here.
+  8453: {
+    aave: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5", // Base Aave V3 Pool (savings deposit)
+    wsteth: "0x4200000000000000000000000000000000000006", // WETH (held asset; aggregator-routed)
+    router: "0x0000000000000000000000000000000000000000", // unused on Base — router is per-quote
+  },
 };
 export const cryptoVenues = CRYPTO_VENUES[activeChain.id];
 
@@ -180,6 +187,30 @@ const sellForUsdc = (
     args: [token, USDC_ADDRESS as `0x${string}`, tokenAmount, 0n, account],
   }),
 });
+
+/**
+ * Build a SWAP PlanAction from a DEX-aggregator quote (0x / KyberSwap via `api.quote`). The aggregator's
+ * `router` is the approve + call target and `routeData` the opaque calldata the account relays; the
+ * contract enforces the balance-delta `minOut`. This is the real-Base swap — replaces the mock-router
+ * encoding used on anvil. Use for both the buy (USDC→held) and the sell-back (held→USDC).
+ */
+export function aggregatorSwapAction(
+  assetIn: `0x${string}`,
+  assetOut: `0x${string}`,
+  amount: bigint,
+  quote: { router: string; routeData: string; minOut: string },
+): PlanAction {
+  return {
+    kind: 2, // SWAP
+    positionId: ZERO_ID,
+    assetIn,
+    assetOut,
+    router: quote.router as `0x${string}`,
+    amount,
+    minOut: BigInt(quote.minOut),
+    routeData: quote.routeData as `0x${string}`,
+  };
+}
 
 /** A position to unwind when closing. Savings → WITHDRAW; a `sell` slice → SWAP the held token to USDC. */
 export type ClosePosition = {
