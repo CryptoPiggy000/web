@@ -153,7 +153,7 @@ export function buildEnginePlan(
       assetOut: v.wsteth,
       router: v.router,
       amount: cryptoAmt,
-      minOut: 0n,
+      minOut: 1n, // the account rejects a zero floor (ZeroMinOut); the mock router over-delivers this
       routeData,
     });
   }
@@ -165,8 +165,8 @@ const ZERO_ID = `0x${"00".repeat(32)}` as `0x${string}`;
 /**
  * SWAP a held token back to USDC via an approved router — the sell side of the mix (crypto → dollars).
  * `routeData` is the router.swap call the account relays; its balance-delta check enforces `minOut`.
- * Demo: `minOut = 0` (mock router, fixed rate). Mainnet fills `routeData`/`minOut` from an aggregator
- * quote (0x/1inch), and that router must be `routeApproved` in the ProtocolRegistry.
+ * Demo: `minOut = 1` wei (mock router, fixed rate — the account rejects a zero floor). Mainnet fills
+ * `routeData`/`minOut` from an aggregator quote (0x/KyberSwap), and that router must be `routeApproved`.
  */
 const sellForUsdc = (
   token: `0x${string}`,
@@ -180,7 +180,7 @@ const sellForUsdc = (
   assetOut: USDC_ADDRESS as `0x${string}`,
   router,
   amount: tokenAmount,
-  minOut: 0n,
+  minOut: 1n, // the account rejects a zero floor (ZeroMinOut); the mock router over-delivers this
   routeData: encodeFunctionData({
     abi: routerAbi,
     functionName: "swap",
