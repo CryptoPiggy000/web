@@ -38,7 +38,9 @@ export default function Home() {
   const status = empty ? (
     <span className="text-muted">Feed your piggy to start.</span>
   ) : earning ? (
-    <span className="text-good">Growing at ≈{(apyBps / 100).toFixed(1)}%/yr</span>
+    <span className="text-good">
+      {apyBps > 0 ? `Growing at ≈${(apyBps / 100).toFixed(1)}%/yr` : "Growing"}
+    </span>
   ) : (
     <span className="text-muted">Resting. Put it to work.</span>
   );

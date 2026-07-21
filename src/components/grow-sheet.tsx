@@ -5,7 +5,7 @@ import { Sheet } from "./sheet";
 import { Button } from "./button";
 import { SheetSuccess } from "./sheet-success";
 import { HeroBalance } from "./hero-balance";
-import { IconPlus, IconTrendUp } from "./icons";
+import { IconPlus, IconTrendUp, IconChevronDown } from "./icons";
 import { usePiggyView, STRATEGY_ID } from "@/lib/piggy";
 import { optionSummary } from "@/lib/planner";
 import { api, API_MODE, type Strategy, type PlanDetail } from "@/lib/api";
@@ -45,6 +45,7 @@ export function GrowSheet({
   const [closeAmount, setCloseAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [busyMsg, setBusyMsg] = useState("Working on it");
+  const [showDetails, setShowDetails] = useState(false); // advanced allocation breakdown, opt-in
   const [result, setResult] = useState<{ title: string; sub?: string } | null>(null);
   const [strategies, setStrategies] = useState<Record<string, Strategy>>({});
   const [planDetail, setPlanDetail] = useState<PlanDetail | null>(null);
@@ -156,6 +157,7 @@ export function GrowSheet({
     setPlanDetail(null);
     setEarnAmount("");
     setCloseAmount("");
+    setShowDetails(false);
     onClose();
   };
 
@@ -307,88 +309,116 @@ export function GrowSheet({
                   })}
                 </div>
 
-                {/* 2 — after picking: allocation preview, then how much (near the button) */}
+                {/* 2 — after picking: just how much. The breakdown is tucked away for the curious. */}
                 {picked && (
                   <>
-                    {pickedStrategy ? (
-                      // engine v2 (API mode): the savings/crypto mix + expected range over a year
-                      <div className="rounded-xl border border-line bg-card p-4">
-                        <div className="mb-3 flex h-2.5 overflow-hidden rounded-full">
-                          {pickedStrategy.savingsPct > 0 && (
-                            <div style={{ width: `${pickedStrategy.savingsPct}%` }} className="bg-accent" />
-                          )}
-                          {pickedStrategy.cryptoPct > 0 && (
-                            <div style={{ width: `${pickedStrategy.cryptoPct}%` }} className="bg-crypto" />
-                          )}
-                        </div>
-                        <ul className="space-y-2 text-sm">
-                          <li className="flex items-center gap-2.5">
-                            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />
-                            <span className="flex-1">Savings (USDC)</span>
-                            <span className="text-muted">{pickedStrategy.savingsPct}%</span>
-                            <span className="w-20 text-right text-good">
-                              ≈{(pickedStrategy.apyBps / 100).toFixed(1)}%/yr
-                            </span>
-                          </li>
-                          {pickedStrategy.cryptoPct > 0 && (
-                            <li className="flex items-center gap-2.5">
-                              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-crypto" />
-                              <span className="flex-1">Crypto (BTC/ETH)</span>
-                              <span className="text-muted">{pickedStrategy.cryptoPct}%</span>
-                              <span className="w-20 text-right text-crypto">
-                                {pctBps(pickedStrategy.upsideBps)} up
-                              </span>
-                            </li>
-                          )}
-                        </ul>
-                        <div className="mt-3 flex justify-between border-t border-line pt-3 text-sm">
-                          <span className="text-muted">Expected in a year</span>
-                          <span className="font-medium">
-                            {pctBps(pickedStrategy.expectedReturnBps)}{" "}
-                            <span className="text-muted">
-                              ({pctBps(pickedStrategy.downsideBps)}…{pctBps(pickedStrategy.upsideBps)})
-                            </span>
-                          </span>
-                        </div>
-                        {pickedStrategy.cryptoPct > 0 && (
-                          <p className="mt-2 text-xs text-muted">
-                            Includes crypto — the price can swing. “View plan” shows the full breakdown.
-                          </p>
-                        )}
-                      </div>
-                    ) : summary ? (
-                      <div className="rounded-xl border border-line bg-card p-4">
-                        {summary.slices.length > 1 && (
-                          <div className="mb-4 flex h-2.5 overflow-hidden rounded-full">
-                            {summary.slices.map((s, i) => (
-                              <div
-                                key={s.key}
-                                style={{ width: `${s.percent}%` }}
-                                className={BAR_TONE[i % BAR_TONE.length]}
-                              />
-                            ))}
-                          </div>
-                        )}
-                        <ul className="space-y-2.5 text-sm">
-                          {summary.slices.map((s, i) => (
-                            <li key={s.key} className="flex items-center gap-2.5">
-                              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${BAR_TONE[i % BAR_TONE.length]}`} />
-                              <span className="flex-1">{s.name}</span>
-                              <span className="text-muted">{s.percent}%</span>
-                              <span className="w-20 text-right text-good">≈{s.apy}%/yr</span>
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="mt-4 flex justify-between border-t border-line pt-3 text-sm">
-                          <span className="text-muted">Est. earnings in a year</span>
-                          <span className="font-medium text-good">
-                            ≈{fmtUsd(BigInt(Math.round(projectedYear * 1e6)))}
-                          </span>
-                        </div>
-                      </div>
-                    ) : null}
+                    {/* Advanced — the allocation breakdown, opt-in so beginners aren't overwhelmed. */}
+                    <div>
+                      <button
+                        onClick={() => setShowDetails((v) => !v)}
+                        className="flex items-center gap-1 text-sm font-medium text-muted transition-colors hover:text-ink"
+                      >
+                        <IconChevronDown
+                          className={`h-4 w-4 transition-transform ${showDetails ? "rotate-180" : ""}`}
+                        />
+                        {showDetails ? "Hide the breakdown" : "How it's invested"}
+                      </button>
 
-                    <label className="flex flex-col gap-1.5">
+                      {showDetails && (
+                        <div className="mt-3 flex flex-col gap-3">
+                          {pickedStrategy ? (
+                            // engine v2 (API mode): the savings/crypto mix + expected range over a year
+                            <div className="rounded-xl border border-line bg-card p-4">
+                              <div className="mb-3 flex h-2.5 overflow-hidden rounded-full">
+                                {pickedStrategy.savingsPct > 0 && (
+                                  <div style={{ width: `${pickedStrategy.savingsPct}%` }} className="bg-accent" />
+                                )}
+                                {pickedStrategy.cryptoPct > 0 && (
+                                  <div style={{ width: `${pickedStrategy.cryptoPct}%` }} className="bg-crypto" />
+                                )}
+                              </div>
+                              <ul className="space-y-2 text-sm">
+                                <li className="flex items-center gap-2.5">
+                                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />
+                                  <span className="flex-1">Savings (USDC)</span>
+                                  <span className="text-muted">{pickedStrategy.savingsPct}%</span>
+                                  <span className="w-20 text-right text-good">
+                                    ≈{(pickedStrategy.apyBps / 100).toFixed(1)}%/yr
+                                  </span>
+                                </li>
+                                {pickedStrategy.cryptoPct > 0 && (
+                                  <li className="flex items-center gap-2.5">
+                                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-crypto" />
+                                    <span className="flex-1">Crypto (BTC/ETH)</span>
+                                    <span className="text-muted">{pickedStrategy.cryptoPct}%</span>
+                                    <span className="w-20 text-right text-crypto">
+                                      {pctBps(pickedStrategy.upsideBps)} up
+                                    </span>
+                                  </li>
+                                )}
+                              </ul>
+                              <div className="mt-3 flex justify-between border-t border-line pt-3 text-sm">
+                                <span className="text-muted">Expected in a year</span>
+                                <span className="font-medium">
+                                  {pctBps(pickedStrategy.expectedReturnBps)}{" "}
+                                  <span className="text-muted">
+                                    ({pctBps(pickedStrategy.downsideBps)}…{pctBps(pickedStrategy.upsideBps)})
+                                  </span>
+                                </span>
+                              </div>
+                              {pickedStrategy.cryptoPct > 0 && (
+                                <p className="mt-2 text-xs text-muted">
+                                  Includes crypto — the price can swing.
+                                </p>
+                              )}
+                            </div>
+                          ) : summary ? (
+                            <div className="rounded-xl border border-line bg-card p-4">
+                              {summary.slices.length > 1 && (
+                                <div className="mb-4 flex h-2.5 overflow-hidden rounded-full">
+                                  {summary.slices.map((s, i) => (
+                                    <div
+                                      key={s.key}
+                                      style={{ width: `${s.percent}%` }}
+                                      className={BAR_TONE[i % BAR_TONE.length]}
+                                    />
+                                  ))}
+                                </div>
+                              )}
+                              <ul className="space-y-2.5 text-sm">
+                                {summary.slices.map((s, i) => (
+                                  <li key={s.key} className="flex items-center gap-2.5">
+                                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${BAR_TONE[i % BAR_TONE.length]}`} />
+                                    <span className="flex-1">{s.name}</span>
+                                    <span className="text-muted">{s.percent}%</span>
+                                    <span className="w-20 text-right text-good">≈{s.apy}%/yr</span>
+                                  </li>
+                                ))}
+                              </ul>
+                              <div className="mt-4 flex justify-between border-t border-line pt-3 text-sm">
+                                <span className="text-muted">Est. earnings in a year</span>
+                                <span className="font-medium text-good">
+                                  ≈{fmtUsd(BigInt(Math.round(projectedYear * 1e6)))}
+                                </span>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {pickedStrategy && (
+                            <Button
+                              variant="secondary"
+                              full
+                              disabled={!earnValid || loadingPlan}
+                              onClick={viewPlan}
+                            >
+                              {loadingPlan ? "Loading plan…" : "View plan"}
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <label className="flex flex-col gap-1.5 border-t border-line pt-4">
                       <span className="text-sm font-medium">How much to earn</span>
                       <div className="flex gap-2">
                         <input
@@ -419,17 +449,6 @@ export function GrowSheet({
                   </>
                 )}
 
-                {/* 3 — view the detailed plan (engine, API mode), then go */}
-                {pickedStrategy && (
-                  <Button
-                    variant="secondary"
-                    full
-                    disabled={!earnValid || loadingPlan}
-                    onClick={viewPlan}
-                  >
-                    {loadingPlan ? "Loading plan…" : "View plan"}
-                  </Button>
-                )}
                 <Button full icon={<IconTrendUp />} disabled={!picked || !earnValid || busy} onClick={startEarning}>
                   {busy ? "Working…" : "Start earning"}
                 </Button>

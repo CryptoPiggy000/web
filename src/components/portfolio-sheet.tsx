@@ -71,23 +71,30 @@ export function PortfolioSheet({
           {positions.length > 0 ? (
             <>
               <ul className="space-y-2.5 text-sm">
-                {positions.map((p) => (
-                  <li key={p.key} className="flex items-center gap-2.5">
-                    <span
-                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${CRYPTO_KEY.test(p.key) ? "bg-crypto" : "bg-good"}`}
-                    />
-                    <span className="flex-1">{p.name}</span>
-                    <span className="tabular-nums text-muted">{fmtUsd(p.base)}</span>
-                    <span className="w-16 text-right tabular-nums text-good">
-                      ≈{(p.apyBps / 100).toFixed(1)}%
-                    </span>
-                  </li>
-                ))}
+                {positions.map((p) => {
+                  const isCrypto = p.cls ? p.cls === "crypto" : CRYPTO_KEY.test(p.key);
+                  return (
+                    <li key={p.key} className="flex items-center gap-2.5">
+                      <span
+                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${isCrypto ? "bg-crypto" : "bg-good"}`}
+                      />
+                      <span className="flex-1">{p.name}</span>
+                      <span className="tabular-nums text-muted">{fmtUsd(p.base)}</span>
+                      {p.apyBps > 0 && (
+                        <span className="w-16 text-right tabular-nums text-good">
+                          ≈{(p.apyBps / 100).toFixed(1)}%
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
-              <div className="mt-3 flex justify-between border-t border-line pt-3 text-sm">
-                <span className="text-muted">Blended yield</span>
-                <span className="font-medium text-good">≈{(apyBps / 100).toFixed(1)}%/yr</span>
-              </div>
+              {apyBps > 0 && (
+                <div className="mt-3 flex justify-between border-t border-line pt-3 text-sm">
+                  <span className="text-muted">Blended yield</span>
+                  <span className="font-medium text-good">≈{(apyBps / 100).toFixed(1)}%/yr</span>
+                </div>
+              )}
             </>
           ) : (
             <p className="rounded-xl border border-line bg-card p-4 text-center text-sm text-muted">

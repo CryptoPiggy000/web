@@ -46,6 +46,7 @@ export interface Position {
   name: string;
   base: bigint;
   apyBps: number;
+  cls?: "savings" | "crypto"; // set when the source knows (ops breakdown); else inferred by key
 }
 
 /** One normalized shape the UI consumes, whether data comes from the sim or the backend. */
@@ -303,21 +304,9 @@ function useChainView(): PiggyView {
   const vaultBase = (positionsRead.data?.[1]?.result as bigint | undefined) ?? 0n;
 
   const idle = balance; // USDC sitting in the account
-  const deployed = aaveBase + vaultBase;
-  const total = idle + deployed;
-  const positions = (
-    [
-      { key: "aave", base: aaveBase },
-      { key: "vault", base: vaultBase },
-    ] as const
-  )
-    .filter((p) => p.base > 0n)
-    .map((p) => ({ key: p.key, name: POSITIONS[p.key].name, base: p.base, apyBps: POSITIONS[p.key].apyBps }));
-  const apyBps =
-    deployed > 0n ? Math.round(Number(aaveBase * 280n + vaultBase * 410n) / Number(deployed)) : 0;
 
-  // Real interest + activity from the ops indexer (public /account/:addr), when configured. Positions
-  // still come from chain (ops has no per-venue breakdown). Absent → activity empty, accrued 0.
+  // Ops indexer (public /account/:addr) when configured: real interest, activity, and the FULL per-venue
+  // position breakdown (many Morpho vaults + crypto) — what the 2 hardcoded chain reads can't give.
   const opsQ = useQuery({
     queryKey: ["ops", piggyAddress],
     enabled: Boolean(OPS_URL && piggyAddress),
@@ -329,17 +318,47 @@ function useChainView(): PiggyView {
         value: number;
         principal: number;
         accrued: number;
+        positions: { key: string; name: string; class: "savings" | "crypto"; valueUsd: number }[];
         activity: { kind: string; amount: number; ts: number | null; txHash: string }[];
       };
     },
   });
-  const opsActivity: ActivityEntry[] = (opsQ.data?.activity ?? []).map((a) => ({
+  const ops = opsQ.data;
+  const useOps = Boolean(ops?.positions?.length); // ops knows all venues → prefer it over the 2 chain reads
+
+  // Positions + deployed: ops breakdown when available, else the two hardcoded chain venues (Sepolia).
+  const positions: Position[] = useOps
+    ? ops!.positions.map((p) => ({
+        key: p.key,
+        name: p.name,
+        base: BigInt(Math.round(p.valueUsd * 1e6)),
+        apyBps: 0, // ops has no APY; enriched off-chain / omitted
+        cls: p.class,
+      }))
+    : (
+        [
+          { key: "aave", base: aaveBase },
+          { key: "vault", base: vaultBase },
+        ] as const
+      )
+        .filter((p) => p.base > 0n)
+        .map((p) => ({ key: p.key, name: POSITIONS[p.key].name, base: p.base, apyBps: POSITIONS[p.key].apyBps }));
+
+  const deployed = useOps ? positions.reduce((a, p) => a + p.base, 0n) : aaveBase + vaultBase;
+  const total = idle + deployed;
+  const apyBps = useOps
+    ? 0
+    : deployed > 0n
+      ? Math.round(Number(aaveBase * 280n + vaultBase * 410n) / Number(deployed))
+      : 0;
+
+  const opsActivity: ActivityEntry[] = (ops?.activity ?? []).map((a) => ({
     ts: a.ts ?? 0,
     type: a.kind as ActivityEntry["type"],
     summary: `${a.kind === "deposit" ? "Deposited" : a.kind === "withdraw" ? "Withdrew" : a.kind} $${a.amount.toFixed(2)}`,
     txHash: a.txHash,
   }));
-  const opsAccrued = opsQ.data?.accrued ?? 0;
+  const opsAccrued = ops?.accrued ?? 0;
 
   const refresh = useCallback(() => {
     qc.invalidateQueries(); // re-reads balance + positions + ops
