@@ -12,7 +12,7 @@ import { usePiggy } from "./usePiggy";
 import { useSim, deployedTotalWei, accruedWei } from "./sim";
 import { optionSummary } from "./planner";
 import { api, API_MODE, runOp } from "./api";
-import { USDC_ADDRESS, FACTORY_ADDRESS } from "./chain";
+import { USDC_ADDRESS, FACTORY_ADDRESS, OPS_URL } from "./chain";
 import {
   CHAIN_MODE,
   POSITIONS,
@@ -316,8 +316,33 @@ function useChainView(): PiggyView {
   const apyBps =
     deployed > 0n ? Math.round(Number(aaveBase * 280n + vaultBase * 410n) / Number(deployed)) : 0;
 
+  // Real interest + activity from the ops indexer (public /account/:addr), when configured. Positions
+  // still come from chain (ops has no per-venue breakdown). Absent → activity empty, accrued 0.
+  const opsQ = useQuery({
+    queryKey: ["ops", piggyAddress],
+    enabled: Boolean(OPS_URL && piggyAddress),
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      const r = await fetch(`${OPS_URL}/account/${piggyAddress}`);
+      if (!r.ok) throw new Error("ops unavailable");
+      return (await r.json()) as {
+        value: number;
+        principal: number;
+        accrued: number;
+        activity: { kind: string; amount: number; ts: number | null; txHash: string }[];
+      };
+    },
+  });
+  const opsActivity: ActivityEntry[] = (opsQ.data?.activity ?? []).map((a) => ({
+    ts: a.ts ?? 0,
+    type: a.kind as ActivityEntry["type"],
+    summary: `${a.kind === "deposit" ? "Deposited" : a.kind === "withdraw" ? "Withdrew" : a.kind} $${a.amount.toFixed(2)}`,
+    txHash: a.txHash,
+  }));
+  const opsAccrued = opsQ.data?.accrued ?? 0;
+
   const refresh = useCallback(() => {
-    qc.invalidateQueries(); // re-reads balance + positions
+    qc.invalidateQueries(); // re-reads balance + positions + ops
   }, [qc]);
 
   // Is the piggy already deployed on-chain? First earn bundles createAccount into the same op.
@@ -335,11 +360,11 @@ function useChainView(): PiggyView {
     deployedBase: deployed,
     positions,
     apyBps,
-    activity: [], // TODO: read from account events
+    activity: opsActivity, // real feed from the ops indexer (empty when not configured)
     empty: total === 0n,
     earning: deployed > 0n,
-    liveTotalUsd: () => Number(total) / 1e6, // mocks don't accrue — flat
-    liveAccruedUsd: () => 0,
+    liveTotalUsd: () => Number(total) / 1e6 + opsAccrued, // chain principal + real accrued (0 if no ops)
+    liveAccruedUsd: () => opsAccrued,
     bumpValueUsd: Number(total) / 1e6,
     earn: async (amountBase, risk) => {
       if (!piggyAddress) return;

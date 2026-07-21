@@ -28,6 +28,13 @@ export const USDC_ADDRESS = USDC_BY_CHAIN[activeChain.id];
 export const USDC_DECIMALS = 6;
 
 /**
+ * Ops indexer (Vũ's cryptopiggy-ops worker). Có URL → Portfolio đọc lãi thật (value − principal) +
+ * activity (feed nạp/rút) từ endpoint public /account/:addr, thay cho việc đọc chain thủ công / rỗng.
+ * Bỏ trống → giữ nguyên: activity rỗng, lãi 0 (mock chain không sinh lãi).
+ */
+export const OPS_URL = process.env.NEXT_PUBLIC_OPS_URL?.replace(/\/$/, "") || undefined;
+
+/**
  * Gasless (EIP-7702 + Pimlico paymaster). Có PIMLICO_API_KEY → user zero-gas:
  * ví embedded được 7702-delegate, userOp trả phí qua paymaster của Pimlico.
  * Địa chỉ EOA giữ nguyên → onlyOwner của SmartInvestmentAccount vẫn pass.
