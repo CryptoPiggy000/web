@@ -58,8 +58,8 @@ export function LiveStats() {
 
   const s = stats ?? FALLBACK;
   const items = [
-    { value: `${s.bestYield}%`, label: "Top savings yield, per year" },
-    { value: `${s.venues}`, label: "Protocols tracked on Base" },
+    { value: `${s.venues}`, label: "Protocols analyzed & risk-scored" },
+    { value: `${s.bestYield}%`, label: "Best yield tracked, per year" },
     { value: `${s.expected}%`, label: "Typical expected return" },
   ];
 
