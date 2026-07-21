@@ -80,3 +80,13 @@ export function IconSparkle({ className }: IconProps) {
     </svg>
   );
 }
+
+export function IconPie({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={className ?? "h-[1.1em] w-[1.1em]"} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="10" cy="10" r="7" />
+      <path d="M10 10V3" />
+      <path d="M10 10l6 3.4" />
+    </svg>
+  );
+}

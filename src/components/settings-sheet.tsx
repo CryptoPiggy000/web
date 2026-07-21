@@ -56,7 +56,7 @@ export function SettingsSheet({
               <button
                 onClick={copyOwner}
                 aria-label="Copy wallet address"
-                className={`transition-colors hover:text-ink ${copied ? "text-good" : ""}`}
+                className={`transition-colors ${copied ? "text-good" : "text-accent hover:text-accent-deep"}`}
               >
                 {copied ? <IconCheck className="h-3.5 w-3.5" /> : <IconCopy className="h-3.5 w-3.5" />}
               </button>

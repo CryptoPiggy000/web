@@ -1,18 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { usePiggyView } from "@/lib/piggy";
 import { fmtUsd } from "@/lib/format";
 import { BalanceCard } from "@/components/balance-card";
 import { Button } from "@/components/button";
-import { IconTrendUp, IconArrowDown, IconPlus } from "@/components/icons";
+import { IconTrendUp, IconArrowDown, IconPlus, IconPie } from "@/components/icons";
 import { DepositSheet } from "@/components/deposit-sheet";
 import { WithdrawSheet } from "@/components/withdraw-sheet";
 import { GrowSheet } from "@/components/grow-sheet";
 import { SettingsSheet } from "@/components/settings-sheet";
+import { PortfolioSheet } from "@/components/portfolio-sheet";
 import { AppBackdrop } from "@/components/app-backdrop";
 
-type SheetName = "deposit" | "withdraw" | "grow" | "settings" | null;
+type SheetName = "deposit" | "withdraw" | "grow" | "settings" | "portfolio" | null;
+
+function ActionTile({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center gap-1.5 rounded-xl border border-line bg-card/60 py-3 text-xs font-medium text-ink transition-colors hover:border-muted hover:bg-card"
+    >
+      <span className="text-[17px] text-accent">{icon}</span>
+      {label}
+    </button>
+  );
+}
 
 export default function Home() {
   const view = usePiggyView();
@@ -40,7 +53,7 @@ export default function Home() {
         <button
           onClick={() => setSheet("settings")}
           aria-label="Settings"
-          className="rounded-lg p-2 text-muted transition-colors hover:bg-card hover:text-ink"
+          className="rounded-lg p-2 text-accent transition-colors hover:bg-card hover:text-accent-deep"
         >
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7">
             <circle cx="12" cy="12" r="3.2" />
@@ -81,13 +94,10 @@ export default function Home() {
               <Button full size="lg" icon={<IconTrendUp />} onClick={() => setSheet("grow")}>
                 {earnLabel}
               </Button>
-              <div className="flex gap-3">
-                <Button variant="secondary" full icon={<IconPlus />} onClick={() => setSheet("deposit")}>
-                  Add money
-                </Button>
-                <Button variant="secondary" full icon={<IconArrowDown />} onClick={() => setSheet("withdraw")}>
-                  Withdraw
-                </Button>
+              <div className="grid grid-cols-3 gap-3">
+                <ActionTile icon={<IconPlus />} label="Add money" onClick={() => setSheet("deposit")} />
+                <ActionTile icon={<IconArrowDown />} label="Withdraw" onClick={() => setSheet("withdraw")} />
+                <ActionTile icon={<IconPie />} label="Portfolio" onClick={() => setSheet("portfolio")} />
               </div>
             </>
           )}
@@ -101,6 +111,7 @@ export default function Home() {
         onManageEarning={() => setSheet("grow")}
       />
       <GrowSheet open={sheet === "grow"} onClose={close} onAddMoney={() => setSheet("deposit")} />
+      <PortfolioSheet open={sheet === "portfolio"} onClose={close} onManage={() => setSheet("grow")} />
       <SettingsSheet open={sheet === "settings"} onClose={close} piggyAddress={piggyAddress} />
     </div>
   );
