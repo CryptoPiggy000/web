@@ -9,6 +9,7 @@ import { IconPlus, IconTrendUp } from "./icons";
 import { usePiggyView, STRATEGY_ID } from "@/lib/piggy";
 import { optionSummary } from "@/lib/planner";
 import { api, API_MODE, type Strategy, type PlanDetail } from "@/lib/api";
+import { DEPOSIT_FEE_BPS } from "@/lib/chain";
 import { fmtUsd } from "@/lib/format";
 import type { RiskTolerance } from "@/lib/types";
 
@@ -126,7 +127,7 @@ export function GrowSheet({
       const r = await view.harvest();
       setResult(
         r.netBase > 0n
-          ? { title: `Harvested ${fmtUsd(r.netBase)}`, sub: `To your wallet · fee ${fmtUsd(r.feeBase)}` }
+          ? { title: `Harvested ${fmtUsd(r.netBase)}`, sub: "To your wallet" }
           : { title: "Nothing to collect yet", sub: "Check back as it grows." },
       );
     } catch (e) {
@@ -407,6 +408,14 @@ export function GrowSheet({
                       </div>
                       <span className="text-xs text-muted">{fmtUsd(restingWei)} in your wallet</span>
                     </label>
+
+                    {DEPOSIT_FEE_BPS > 0 && earnValid && (
+                      <p className="text-xs text-muted">
+                        Platform fee {(DEPOSIT_FEE_BPS / 100).toFixed(2)}% ·{" "}
+                        ≈{fmtUsd(BigInt(Math.round((Number(earnAmount) * DEPOSIT_FEE_BPS) / 10000 * 1e6)))} on this
+                        deposit · withdrawals are always free
+                      </p>
+                    )}
                   </>
                 )}
 
@@ -451,7 +460,7 @@ export function GrowSheet({
                 <Button variant="secondary" full disabled={busy} onClick={doHarvest}>
                   Harvest interest
                 </Button>
-                <p className="mt-1.5 text-xs text-muted">Interest to your wallet · small fee.</p>
+                <p className="mt-1.5 text-xs text-muted">Interest to your wallet — no fee.</p>
               </div>
 
               <div className="border-t border-line pt-4">

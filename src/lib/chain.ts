@@ -48,6 +48,13 @@ export const pimlicoUrl = PIMLICO_API_KEY
  */
 export const ONRAMP_DEV = !process.env.NEXT_PUBLIC_API_URL;
 
+/**
+ * Deposit (entry) fee shown in the earn flow, in basis points. DISPLAY-ONLY — the on-chain
+ * `ProtocolRegistry.depositFeeBps` is the enforcer (hard-capped at 2%). Keep this in sync with it
+ * whenever the on-chain fee is changed; 0 = no fee is shown (the default until the fee is turned on).
+ */
+export const DEPOSIT_FEE_BPS = Number(process.env.NEXT_PUBLIC_DEPOSIT_FEE_BPS ?? "0");
+
 export const explorerUrl =
   activeChain.blockExplorers?.default.url ?? "https://etherscan.io";
 

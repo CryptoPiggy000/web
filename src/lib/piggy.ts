@@ -67,7 +67,7 @@ export interface PiggyView {
   bumpValueUsd: number; // heo nảy khi tăng
 
   earn: (amountBase: bigint, risk: RiskTolerance) => Promise<void>;
-  harvest: () => Promise<{ netBase: bigint; feeBase: bigint }>;
+  harvest: () => Promise<{ netBase: bigint }>;
   closePosition: (amountBase: bigint) => Promise<void>;
   addFiat: (amountUsd: number) => Promise<void>;
   withdraw: (to: `0x${string}`, amountBase: bigint) => Promise<{ txHash?: string }>;
@@ -117,7 +117,7 @@ function useSimView(): PiggyView {
 
   const harvest = useCallback(async () => {
     const r = sim.harvest();
-    return { netBase: r.net, feeBase: r.fee };
+    return { netBase: r.net };
   }, [sim]);
 
   const closePosition = useCallback(async (amountBase: bigint) => sim.exitToWallet(amountBase), [sim]);
@@ -256,8 +256,8 @@ function useApiView(): PiggyView {
       const op = await api.buildHarvest();
       await api.submit(op.operationId, "0x");
       refresh();
-      const pv = op.preview as { netBase?: string; feeBase?: string };
-      return { netBase: BigInt(pv.netBase ?? "0"), feeBase: BigInt(pv.feeBase ?? "0") };
+      const pv = op.preview as { netBase?: string };
+      return { netBase: BigInt(pv.netBase ?? "0") };
     },
     closePosition: async (amountBase) => {
       await runOp(api.buildExit(amountBase.toString()));
@@ -361,7 +361,7 @@ function useChainView(): PiggyView {
       await sendBatch(calls);
       refresh();
     },
-    harvest: async () => ({ netBase: 0n, feeBase: 0n }), // no yield on mock venues
+    harvest: async () => ({ netBase: 0n }), // no yield on mock venues
     closePosition: async (amountBase) => {
       if (!piggyAddress) return;
       const plan = buildClosePlan(
@@ -478,7 +478,7 @@ function useDevChainView(): PiggyView {
       await clients.pub.waitForTransactionReceipt({ hash });
       refresh();
     },
-    harvest: async () => ({ netBase: 0n, feeBase: 0n }),
+    harvest: async () => ({ netBase: 0n }),
     // Unwind `amountBase` USD back to idle USDC, proportionally: WITHDRAW the aave savings + SELL the
     // wstETH crypto slice back to USDC (the sell-back path). All amounts in anvil 18-dec.
     closePosition: async (amountBase) => {

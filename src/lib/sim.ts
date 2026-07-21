@@ -33,8 +33,6 @@ const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 // accrual clock so the balance visibly climbs during a session. Display + harvest
 // both use this, so they stay consistent. (Stated APY labels stay honest.)
 const DEMO_SPEED = 8000;
-// Phí harvest (basis points): 1%. Khớp với việc harvest thật tốn fee.
-const HARVEST_FEE_BPS = 100;
 
 function usd(base: bigint): string {
   return `$${(Number(base) / 1e6).toFixed(2)}`;
@@ -157,14 +155,12 @@ export function useSim() {
     });
   }, []);
 
-  // Harvest: thu lãi đã cộng dồn (trừ phí), lãi net cộng vào tổng. Bất cứ lúc nào.
-  const harvest = useCallback((): { gross: bigint; fee: bigint; net: bigint } => {
+  // Harvest: collect accrued interest to the wallet. Free — the fee is on deposits, never on harvest.
+  const harvest = useCallback((): { net: bigint } => {
     const s = read();
     const now = Date.now();
-    const gross = accruedWei(s.positions, s.earnSince, now);
-    if (gross === 0n) return { gross: 0n, fee: 0n, net: 0n };
-    const fee = (gross * BigInt(HARVEST_FEE_BPS)) / 10_000n;
-    const net = gross - fee;
+    const net = accruedWei(s.positions, s.earnSince, now);
+    if (net === 0n) return { net: 0n };
     write({
       ...s,
       harvestedWei: (BigInt(s.harvestedWei) + net).toString(),
@@ -173,13 +169,13 @@ export function useSim() {
         {
           ts: now,
           type: "harvest" as const,
-          summary: `Harvested $${(Number(net) / 1e6).toFixed(4)} (fee $${(Number(fee) / 1e6).toFixed(4)})`,
+          summary: `Harvested $${(Number(net) / 1e6).toFixed(4)}`,
           simulated: true,
         },
         ...s.activity,
       ].slice(0, 100),
     });
-    return { gross, fee, net };
+    return { net };
   }, []);
 
   const reset = useCallback(() => write(EMPTY), []);
