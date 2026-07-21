@@ -14,7 +14,7 @@ function Section({ n, title, children }: { n: string; title: string; children: R
 
 export default function PrivacyPage() {
   return (
-    <main className="flex flex-1 flex-col overflow-y-auto px-6 py-8">
+    <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-1 flex-col overflow-y-auto px-6 py-10">
       <a href="/app" className="text-sm text-muted underline underline-offset-4 hover:text-ink">
         ← Back
       </a>

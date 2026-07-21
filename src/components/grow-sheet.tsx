@@ -22,7 +22,7 @@ const CHOICES: { value: RiskTolerance; label: string }[] = [
 // bps → signed % (e.g. -6234 → "−62%")
 const pctBps = (b: number) => `${b >= 0 ? "+" : "−"}${Math.abs(Math.round(b / 100))}%`;
 
-const BAR_TONE = ["bg-accent", "bg-accent/55", "bg-[#c8a08f]"];
+const BAR_TONE = ["bg-accent", "bg-accent/55", "bg-crypto"];
 
 export function GrowSheet({
   open,
@@ -170,7 +170,7 @@ export function GrowSheet({
                 <div style={{ width: `${planDetail.summary.savingsPct}%` }} className="bg-accent" />
               )}
               {planDetail.summary.cryptoPct > 0 && (
-                <div style={{ width: `${planDetail.summary.cryptoPct}%` }} className="bg-[#c8a08f]" />
+                <div style={{ width: `${planDetail.summary.cryptoPct}%` }} className="bg-crypto" />
               )}
             </div>
             <div className="mt-1.5 flex justify-between text-xs text-muted">
@@ -189,7 +189,7 @@ export function GrowSheet({
             </div>
             <div className="rounded-xl border border-line bg-card p-3">
               <p className="text-xs text-muted">Growth · crypto</p>
-              <p className="mt-0.5 font-semibold text-[#c8a08f]">
+              <p className="mt-0.5 font-semibold text-crypto">
                 {pctBps(planDetail.summary.cryptoExpectedBps)} typical
               </p>
               <p className="text-xs text-muted">
@@ -203,7 +203,7 @@ export function GrowSheet({
             {planDetail.allocation.map((a) => (
               <li key={a.position_id} className="flex items-center gap-2.5">
                 <span
-                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${a.class === "crypto" ? "bg-[#c8a08f]" : "bg-accent"}`}
+                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${a.class === "crypto" ? "bg-crypto" : "bg-accent"}`}
                 />
                 <span className="flex-1">{a.symbol}</span>
                 <span className="text-muted">{a.pct}%</span>
@@ -293,7 +293,7 @@ export function GrowSheet({
                         {bs ? (
                           <span className="flex items-center gap-2 text-sm">
                             {bs.cryptoPct > 0 && (
-                              <span className="rounded-full bg-[#c8a08f]/15 px-2 py-0.5 text-xs text-[#c8a08f]">
+                              <span className="rounded-full bg-crypto/15 px-2 py-0.5 text-xs text-crypto">
                                 {bs.cryptoPct}% crypto
                               </span>
                             )}
@@ -318,7 +318,7 @@ export function GrowSheet({
                             <div style={{ width: `${pickedStrategy.savingsPct}%` }} className="bg-accent" />
                           )}
                           {pickedStrategy.cryptoPct > 0 && (
-                            <div style={{ width: `${pickedStrategy.cryptoPct}%` }} className="bg-[#c8a08f]" />
+                            <div style={{ width: `${pickedStrategy.cryptoPct}%` }} className="bg-crypto" />
                           )}
                         </div>
                         <ul className="space-y-2 text-sm">
@@ -332,10 +332,10 @@ export function GrowSheet({
                           </li>
                           {pickedStrategy.cryptoPct > 0 && (
                             <li className="flex items-center gap-2.5">
-                              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#c8a08f]" />
+                              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-crypto" />
                               <span className="flex-1">Crypto (BTC/ETH)</span>
                               <span className="text-muted">{pickedStrategy.cryptoPct}%</span>
-                              <span className="w-20 text-right text-[#c8a08f]">
+                              <span className="w-20 text-right text-crypto">
                                 {pctBps(pickedStrategy.upsideBps)} up
                               </span>
                             </li>

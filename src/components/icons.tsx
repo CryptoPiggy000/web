@@ -62,3 +62,21 @@ export function IconCopy({ className }: IconProps) {
     </svg>
   );
 }
+
+export function IconShield({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={className ?? "h-[1.1em] w-[1.1em]"} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 2.5l6 2.2v4.6c0 3.7-2.5 6.6-6 8.2-3.5-1.6-6-4.5-6-8.2V4.7l6-2.2z" />
+      <path d="M7.5 10l1.8 1.8L13 8" />
+    </svg>
+  );
+}
+
+export function IconSparkle({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" className={className ?? "h-[1.1em] w-[1.1em]"} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 2.5c.4 3.6 1.9 5.1 5.5 5.5-3.6.4-5.1 1.9-5.5 5.5-.4-3.6-1.9-5.1-5.5-5.5 3.6-.4 5.1-1.9 5.5-5.5z" />
+      <path d="M15.5 13.5c.2 1.6.8 2.2 2.5 2.5-1.7.3-2.3.9-2.5 2.5-.2-1.6-.8-2.2-2.5-2.5 1.7-.3 2.3-.9 2.5-2.5z" />
+    </svg>
+  );
+}

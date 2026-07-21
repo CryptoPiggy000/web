@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Manrope, Geist_Mono } from "next/font/google";
 import { Providers } from "@/components/providers";
-import { AppShell } from "@/components/shell";
 import "./globals.css";
 
 const sans = Manrope({
@@ -27,10 +26,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable} h-full antialiased`}>
-      <body className="flex min-h-dvh flex-col items-center bg-[#e7e4db] font-sans">
-        <Providers>
-          <AppShell>{children}</AppShell>
-        </Providers>
+      <body className="min-h-dvh font-sans">
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

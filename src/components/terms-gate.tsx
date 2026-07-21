@@ -19,11 +19,14 @@ export function TermsGate({ children }: { children: React.ReactNode }) {
   const [accepted, setAccepted] = useState<boolean | null>(null);
 
   useEffect(() => {
+    // Reading persisted acceptance from localStorage on mount — a legit external-state sync.
+    /* eslint-disable react-hooks/set-state-in-effect */
     try {
       setAccepted(window.localStorage.getItem(STORAGE_KEY) === TERMS_VERSION);
     } catch {
       setAccepted(false); // storage blocked → show the gate to be safe
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   const accept = () => {

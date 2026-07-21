@@ -10,6 +10,7 @@ import { DepositSheet } from "@/components/deposit-sheet";
 import { WithdrawSheet } from "@/components/withdraw-sheet";
 import { GrowSheet } from "@/components/grow-sheet";
 import { SettingsSheet } from "@/components/settings-sheet";
+import { AppBackdrop } from "@/components/app-backdrop";
 
 type SheetName = "deposit" | "withdraw" | "grow" | "settings" | null;
 
@@ -30,9 +31,12 @@ export default function Home() {
   );
 
   return (
-    <div className="flex flex-1 flex-col">
-      <header className="flex items-center justify-between px-6 py-4">
-        <span className="font-mono text-lg font-semibold tracking-tight text-accent">CryptoPiggy</span>
+    <div className="relative flex flex-1 flex-col">
+      <AppBackdrop />
+      <header className="relative z-10 flex items-center justify-between px-6 py-4">
+        <span className="text-lg font-bold tracking-[-0.03em]">
+          Crypto<span className="text-accent">Piggy</span>
+        </span>
         <button
           onClick={() => setSheet("settings")}
           aria-label="Settings"
@@ -45,7 +49,7 @@ export default function Home() {
         </button>
       </header>
 
-      <main className="flex flex-1 flex-col pb-10">
+      <main className="relative z-10 flex flex-1 flex-col pb-10">
         <div className="flex flex-1 flex-col items-center justify-center">
           <BalanceCard
             compute={view.liveTotalUsd}
