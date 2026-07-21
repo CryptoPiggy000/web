@@ -4,41 +4,42 @@ import { useRouter } from "next/navigation";
 import { Piggy } from "@/components/piggy";
 import { Button } from "@/components/button";
 import { LiveStats } from "@/components/live-stats";
+import { Reveal, useInView } from "@/components/motion";
 import { IconShield, IconTrendUp, IconSparkle, IconCard } from "@/components/icons";
 
 const STEPS = [
   {
     n: "01",
     title: "Set your comfort",
-    body: "Tell us how much risk feels right — from Safe to Bold. No forms, no finance degree.",
+    body: "Pick Safe, Balanced, or Bold. That's the only call you have to make.",
   },
   {
     n: "02",
-    title: "Get a tailored plan",
-    body: "The engine spreads your money across the best risk-adjusted venues. You review it and sign — nothing moves without you.",
+    title: "See the plan",
+    body: "We show you where your money would go, and why. Approve it with a tap; nothing moves until you do.",
   },
   {
     n: "03",
     title: "It works, you relax",
-    body: "Your money earns across trusted protocols. Adjust your mix or cash out whenever you like.",
+    body: "It earns from day one. Adjust the mix or cash out any time — nothing is locked up.",
   },
 ];
 
 const ENGINE = [
   {
     icon: <IconSparkle />,
-    title: "Risk and reward, both scored",
-    body: "Every venue gets a risk score and a reward score, calibrated against the wider market — not just its headline APY.",
+    title: "Weighs risk against reward",
+    body: "Each option gets two scores: what it can earn, and what it can lose. A fat APY doesn't win if the risk is worse.",
   },
   {
     icon: <IconTrendUp />,
-    title: "Live, around the clock",
-    body: "It tracks yields across Base — Aave, Morpho and more — and refreshes as the market moves.",
+    title: "Watches the market all day",
+    body: "Rates on Aave, Morpho and the rest move constantly. It re-checks them around the clock so your plan never goes stale.",
   },
   {
     icon: <IconShield />,
     title: "Suggests, never seizes",
-    body: "It only proposes an allocation. You always review and sign; your funds never leave your wallet.",
+    body: "It can only propose. You approve every move, and your money never leaves your wallet.",
   },
 ];
 
@@ -60,10 +61,10 @@ const TRUST = [
   },
 ];
 
+const HEAD_LINES = [["Your", "idle", "money,"], ["working", "for", "you."]];
+
 export default function Landing() {
   const router = useRouter();
-
-  // Pure marketing page — no auth here. Launch just enters the app; /app handles sign-in itself.
   const launch = () => router.push("/app");
 
   return (
@@ -75,7 +76,7 @@ export default function Landing() {
             <Piggy className="w-7" />
             Crypto<span className="text-accent">Piggy</span>
           </span>
-          <Button size="sm" onClick={launch}>
+          <Button size="md" onClick={launch}>
             Launch app
           </Button>
         </nav>
@@ -83,70 +84,104 @@ export default function Landing() {
 
       {/* ── hero ── */}
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-5 pb-8 pt-14 sm:px-8 md:grid-cols-2 md:gap-6 md:pb-16 md:pt-24">
-        <div className="animate-fade-rise text-center md:text-left">
-          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-muted">
+        <div className="text-center md:text-left">
+          <span className="animate-rise inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-muted">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
             More than a savings app
           </span>
           <h1 className="mt-5 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl md:text-[3.4rem]">
-            Your idle money,
-            <br />
-            working for you.
+            {HEAD_LINES.map((line, li) => (
+              <span key={li} className="block">
+                {line.map((word, wi) => {
+                  const idx = li * 3 + wi;
+                  return (
+                    <span
+                      key={wi}
+                      className="animate-word-in"
+                      style={{ animationDelay: `${120 + idx * 90}ms` }}
+                    >
+                      {word}
+                      {wi < line.length - 1 ? " " : ""}
+                    </span>
+                  );
+                })}
+              </span>
+            ))}
           </h1>
-          <p className="mx-auto mt-5 max-w-md text-lg leading-relaxed text-muted md:mx-0">
-            CryptoPiggy puts your spare cash to work across trusted protocols — guided by a
-            market-intelligence engine, in a wallet only you control. You choose the comfort level;
-            it suggests the plan.
+          <p
+            className="animate-rise mx-auto mt-5 max-w-md text-lg leading-relaxed text-muted md:mx-0"
+            style={{ animationDelay: "640ms" }}
+          >
+            Spare cash comes in and grows on its own. You make the call, AI does the homework — and it
+            never leaves your wallet.
           </p>
-          <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row md:items-start">
+          <div
+            className="animate-rise mt-8 flex flex-col items-center gap-3 sm:flex-row md:items-start"
+            style={{ animationDelay: "760ms" }}
+          >
             <Button size="lg" onClick={launch} className="w-full sm:w-auto">
               Start growing
             </Button>
             <a
               href="#how"
-              className="text-sm font-medium text-muted underline-offset-4 hover:text-ink hover:underline"
+              className="inline-flex w-full items-center justify-center rounded-2xl border border-line px-6 py-4 text-base font-medium text-ink transition-colors hover:border-muted hover:bg-card sm:w-auto"
             >
               See how it works
             </a>
           </div>
-          <p className="mt-4 text-xs text-muted">Free to start · Email or Google · Withdraw anytime</p>
+          <p
+            className="animate-rise mt-4 text-xs text-muted"
+            style={{ animationDelay: "860ms" }}
+          >
+            Free to start · Email or Google · Withdraw anytime
+          </p>
         </div>
 
-        {/* illustration */}
-        <div className="animate-fade-rise relative mx-auto flex aspect-square w-full max-w-sm items-center justify-center [animation-delay:120ms]">
-          <div className="absolute inset-6 rounded-full bg-accent/5" />
-          <div className="absolute inset-14 rounded-full bg-accent/5" />
-          <div className="animate-piggy-breathe relative">
-            <Piggy className="w-64 drop-shadow-sm sm:w-72" />
+        {/* illustration — coins drop into the piggy */}
+        <div className="relative mx-auto flex aspect-square w-full max-w-sm items-center justify-center">
+          <div className="animate-ring-pulse absolute inset-6 rounded-full bg-accent/10" />
+          <div className="animate-ring-pulse absolute inset-6 rounded-full bg-accent/10 [animation-delay:1.2s]" />
+          <div className="animate-ring-pulse absolute inset-6 rounded-full bg-accent/10 [animation-delay:2.4s]" />
+
+          <div className="animate-piggy-enter relative [animation-delay:200ms]">
+            <div className="animate-piggy-breathe">
+              <Piggy className="w-64 drop-shadow-sm sm:w-72" />
+            </div>
           </div>
-          <Coin className="left-6 top-10 [animation-delay:0ms]" />
-          <Coin className="right-8 top-20 [animation-delay:900ms]" />
-          <Coin className="bottom-12 left-12 [animation-delay:1800ms]" />
+
+          {/* falling coins aimed at the slot */}
+          <div className="pointer-events-none absolute left-1/2 top-[27%] -translate-x-1/2">
+            <DropCoin x="-34px" delay="300ms" />
+            <DropCoin x="14px" delay="1230ms" />
+            <DropCoin x="-6px" delay="2160ms" />
+          </div>
         </div>
       </section>
 
       {/* ── live stats ── */}
       <section className="border-y border-line bg-card/60">
         <div className="mx-auto max-w-3xl px-5 py-10 sm:px-8 sm:py-14">
-          <LiveStats />
+          <Reveal>
+            <LiveStats />
+          </Reveal>
         </div>
       </section>
 
       {/* ── how it works ── */}
       <section id="how" className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-24">
-        <div className="max-w-xl">
+        <Reveal className="max-w-xl">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">How it works</p>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
             A managed plan, without the middleman fees.
           </h2>
-        </div>
+        </Reveal>
         <ol className="mt-10 grid gap-8 md:grid-cols-3 md:gap-6">
-          {STEPS.map((s) => (
-            <li key={s.n} className="relative">
+          {STEPS.map((s, i) => (
+            <Reveal as="li" key={s.n} delay={i * 110} className="relative">
               <span className="font-mono text-sm font-semibold text-accent/60">{s.n}</span>
               <h3 className="mt-2 text-xl font-semibold tracking-tight">{s.title}</h3>
               <p className="mt-2 leading-relaxed text-muted">{s.body}</p>
-            </li>
+            </Reveal>
           ))}
         </ol>
       </section>
@@ -155,40 +190,21 @@ export default function Landing() {
       <section className="border-t border-line bg-card/60">
         <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-24">
           <div className="grid gap-12 md:grid-cols-[1fr_1.1fr] md:items-center md:gap-16">
-            <div>
+            <Reveal>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">The engine</p>
               <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-                A market-intelligence layer, working for your money.
+                It reads the market so you don&apos;t have to.
               </h2>
               <p className="mt-4 max-w-md leading-relaxed text-muted">
-                Most apps just list the highest yield. Ours scores every venue on two things — how much
-                it can earn and how much it can lose — then matches a plan to how much risk you&apos;re
-                comfortable with.
+                Most apps just show you the biggest number. Ours weighs what each option can earn
+                against what it can lose, then builds a plan around how bold you want to be.
               </p>
-              {/* risk spectrum */}
-              <div className="mt-8 max-w-sm rounded-2xl border border-line bg-paper p-4">
-                <div className="flex items-center justify-between text-xs text-muted">
-                  <span>Safe</span>
-                  <span>Balanced</span>
-                  <span>Bold</span>
-                </div>
-                <div className="relative mt-2 h-1.5 rounded-full bg-line">
-                  <span className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-card bg-accent shadow" />
-                </div>
-                <div className="mt-4 flex h-2.5 overflow-hidden rounded-full">
-                  <span className="bg-good" style={{ width: "70%" }} />
-                  <span className="bg-crypto" style={{ width: "30%" }} />
-                </div>
-                <div className="mt-1.5 flex justify-between text-xs text-muted">
-                  <span>70% savings</span>
-                  <span>30% growth</span>
-                </div>
-              </div>
-            </div>
+              <RiskSpectrum />
+            </Reveal>
 
             <ul className="flex flex-col gap-7">
-              {ENGINE.map((e) => (
-                <li key={e.title} className="flex gap-4">
+              {ENGINE.map((e, i) => (
+                <Reveal as="li" key={e.title} delay={i * 120} className="flex gap-4">
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-[19px] text-accent">
                     {e.icon}
                   </span>
@@ -196,7 +212,7 @@ export default function Landing() {
                     <h3 className="font-semibold tracking-tight">{e.title}</h3>
                     <p className="mt-1 text-sm leading-relaxed text-muted">{e.body}</p>
                   </div>
-                </li>
+                </Reveal>
               ))}
             </ul>
           </div>
@@ -206,23 +222,23 @@ export default function Landing() {
       {/* ── trust / security ── */}
       <section className="border-t border-line">
         <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8 sm:py-24">
-          <div className="max-w-xl">
+          <Reveal className="max-w-xl">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">
               Built to be trusted
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
               Your money never leaves your hands.
             </h2>
-          </div>
+          </Reveal>
           <div className="mt-10 grid gap-x-6 gap-y-9 sm:grid-cols-3">
-            {TRUST.map((t) => (
-              <div key={t.title}>
+            {TRUST.map((t, i) => (
+              <Reveal key={t.title} delay={i * 110}>
                 <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/10 text-[19px] text-accent">
                   {t.icon}
                 </span>
                 <h3 className="mt-4 font-semibold tracking-tight">{t.title}</h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-muted">{t.body}</p>
-              </div>
+              </Reveal>
             ))}
           </div>
         </div>
@@ -230,18 +246,22 @@ export default function Landing() {
 
       {/* ── closing CTA ── */}
       <section className="mx-auto max-w-6xl px-5 py-20 text-center sm:px-8 sm:py-28">
-        <div className="mx-auto mb-6 w-fit">
-          <Piggy className="w-20" />
-        </div>
-        <h2 className="mx-auto max-w-lg text-3xl font-semibold tracking-tight sm:text-4xl">
-          Start with as little as you like.
-        </h2>
-        <p className="mx-auto mt-4 max-w-sm text-muted">
-          It takes a minute to open your piggy. Your future self says thanks.
-        </p>
-        <Button size="lg" onClick={launch} className="mt-8">
-          Open my piggy
-        </Button>
+        <Reveal>
+          <div className="mx-auto mb-6 w-fit">
+            <div className="animate-piggy-breathe">
+              <Piggy className="w-20" />
+            </div>
+          </div>
+          <h2 className="mx-auto max-w-lg text-3xl font-semibold tracking-tight sm:text-4xl">
+            Start with as little as you like.
+          </h2>
+          <p className="mx-auto mt-4 max-w-sm text-muted">
+            Opening your piggy takes about a minute. Start with ten dollars if you like.
+          </p>
+          <Button size="lg" onClick={launch} className="mt-8">
+            Open my piggy
+          </Button>
+        </Reveal>
       </section>
 
       {/* ── footer ── */}
@@ -273,11 +293,43 @@ export default function Landing() {
   );
 }
 
-function Coin({ className }: { className?: string }) {
+function DropCoin({ x, delay }: { x: string; delay: string }) {
   return (
-    <div aria-hidden className={`animate-coin-float absolute ${className ?? ""}`}>
+    <div
+      aria-hidden
+      className="animate-coin-into-slot absolute -translate-x-1/2"
+      style={{ ["--x" as string]: x, animationDelay: delay }}
+    >
       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gold text-sm font-bold text-ink shadow-md ring-2 ring-paper">
         $
+      </div>
+    </div>
+  );
+}
+
+function RiskSpectrum() {
+  const [ref, inView] = useInView<HTMLDivElement>();
+  return (
+    <div ref={ref} className="mt-8 max-w-sm rounded-2xl border border-line bg-paper p-4">
+      <div className="flex items-center justify-between text-xs text-muted">
+        <span>Safe</span>
+        <span>Balanced</span>
+        <span>Bold</span>
+      </div>
+      <div className="relative mt-2 h-1.5 rounded-full bg-line">
+        <span
+          className={`spectrum-dot absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-card bg-accent shadow ${inView ? "in" : ""}`}
+        />
+      </div>
+      <div className="mt-4 flex h-2.5 overflow-hidden rounded-full bg-line">
+        <span className={`spectrum-fill flex ${inView ? "in" : ""}`} style={{ width: "100%" }}>
+          <span className="bg-good" style={{ width: "70%" }} />
+          <span className="bg-crypto" style={{ width: "30%" }} />
+        </span>
+      </div>
+      <div className="mt-1.5 flex justify-between text-xs text-muted">
+        <span>70% savings</span>
+        <span>30% growth</span>
       </div>
     </div>
   );

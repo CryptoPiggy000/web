@@ -34,7 +34,7 @@ export function Button({
 }) {
   return (
     <button
-      className={`inline-flex items-center justify-center font-medium transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:pointer-events-none disabled:opacity-40 ${
+      className={`inline-flex cursor-pointer items-center justify-center font-medium transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:pointer-events-none disabled:opacity-40 ${
         VARIANTS[variant]
       } ${SIZES[size]} ${full ? "w-full" : ""} ${className}`}
       {...props}

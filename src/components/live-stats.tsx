@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Strategy } from "@/lib/api";
+import { CountUp } from "./motion";
 
 // Landing marketing stats always want live numbers — prefer the app's configured API, else the known
 // production backend. Public, keyless: /market/strategies over real Base market data.
@@ -58,9 +59,9 @@ export function LiveStats() {
 
   const s = stats ?? FALLBACK;
   const items = [
-    { value: `${s.venues}`, label: "Protocols analyzed & risk-scored" },
-    { value: `${s.bestYield}%`, label: "Best yield tracked, per year" },
-    { value: `${s.expected}%`, label: "Typical expected return" },
+    { value: s.venues, decimals: 0, suffix: "", label: "Protocols analyzed & risk-scored" },
+    { value: parseFloat(s.bestYield), decimals: 1, suffix: "%", label: "Best yield tracked, per year" },
+    { value: parseFloat(s.expected), decimals: 1, suffix: "%", label: "Typical expected return" },
   ];
 
   return (
@@ -78,7 +79,7 @@ export function LiveStats() {
             className="rounded-2xl border border-line bg-card px-3 py-5 text-center sm:px-5"
           >
             <dt className="text-2xl font-semibold tracking-tight tabular-nums text-accent sm:text-3xl">
-              {it.value}
+              <CountUp value={it.value} decimals={it.decimals} suffix={it.suffix} />
             </dt>
             <dd className="mx-auto mt-1.5 max-w-[9rem] text-xs leading-snug text-muted sm:text-sm">
               {it.label}
