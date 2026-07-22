@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createPublicClient, createWalletClient, http, parseAbi, erc20Abi } from "viem";
+import { createPublicClient, createWalletClient, http, parseAbi, erc20Abi, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { useReadContracts, useWriteContract, usePublicClient } from "wagmi";
@@ -12,7 +12,7 @@ import { usePiggy } from "./usePiggy";
 import { useSim, deployedTotalWei, accruedWei } from "./sim";
 import { optionSummary } from "./planner";
 import { api, API_MODE, runOp } from "./api";
-import { USDC_ADDRESS, FACTORY_ADDRESS, OPS_URL } from "./chain";
+import { USDC_ADDRESS, FACTORY_ADDRESS, OPS_URL, activeChain } from "./chain";
 import {
   CHAIN_MODE,
   POSITIONS,
@@ -25,6 +25,8 @@ import {
   buildEarnPlan,
   buildEnginePlan,
   buildClosePlan,
+  buildBaseEarnPlan,
+  buildBaseClosePlan,
   aavePositionId,
   cryptoVenues,
 } from "./contracts";
@@ -291,17 +293,40 @@ function useChainView(): PiggyView {
   const embedded = wallets.find((w) => w.walletClientType === "privy");
   const owner = embedded?.address as `0x${string}` | undefined;
 
+  // On Base the savings pool is the crypto-venue Aave and the crypto slice is a held token (WETH); on
+  // Sepolia (no cryptoVenues) it's the legacy Aave + vault. `isBase` = dynamic-router chain (per-quote swap).
+  const savingsAave = (cryptoVenues?.aave ?? AAVE_ADDRESS) as `0x${string}`;
+  const heldToken = (cryptoVenues?.wsteth ?? (USDC_ADDRESS as `0x${string}`)) as `0x${string}`; // fallback: unused off-Base
+  const isBase = Boolean(cryptoVenues && cryptoVenues.router === zeroAddress);
   const positionsRead = useReadContracts({
     query: { enabled: Boolean(piggyAddress), refetchInterval: 8_000 },
     contracts: piggyAddress
       ? [
-          { address: AAVE_ADDRESS, abi: aaveAbi, functionName: "supplied", args: [piggyAddress, USDC_ADDRESS as `0x${string}`] },
+          { address: savingsAave, abi: aaveAbi, functionName: "supplied", args: [piggyAddress, USDC_ADDRESS as `0x${string}`] },
           { address: VAULT_ADDRESS, abi: vaultAbi, functionName: "maxWithdraw", args: [piggyAddress] },
+          { address: heldToken, abi: erc20Abi, functionName: "balanceOf", args: [piggyAddress] },
         ]
       : [],
   });
   const aaveBase = (positionsRead.data?.[0]?.result as bigint | undefined) ?? 0n;
   const vaultBase = (positionsRead.data?.[1]?.result as bigint | undefined) ?? 0n;
+  // Held token (Base crypto slice); only consulted when isBase, so the off-Base USDC fallback is ignored.
+  const heldBalance = isBase ? (positionsRead.data?.[2]?.result as bigint | undefined) ?? 0n : 0n;
+
+  // The DEX-aggregator quote fetcher for on-chain swaps (Base): api.quote → 0x/KyberSwap best fill.
+  const fetchQuote = useCallback(
+    async (sellToken: `0x${string}`, buyToken: `0x${string}`, sellAmount: bigint) => {
+      if (!piggyAddress) throw new Error("No account");
+      return api.quote({
+        sellToken,
+        buyToken,
+        sellAmount: sellAmount.toString(),
+        taker: piggyAddress,
+        chainId: activeChain.id,
+      });
+    },
+    [piggyAddress],
+  );
 
   const idle = balance; // USDC sitting in the account
 
@@ -392,7 +417,10 @@ function useChainView(): PiggyView {
       let plan;
       if (API_MODE && cryptoVenues) {
         const eng = await api.plan({ strategy: STRATEGY_ID[risk], amount: amountBase.toString(), term: "1y" });
-        plan = buildEnginePlan(eng.summary, amountBase, piggyAddress);
+        // Base: BUY the crypto slice through the DEX aggregator (real router/minOut). Anvil: mock router.
+        plan = isBase
+          ? await buildBaseEarnPlan(eng.summary, amountBase, fetchQuote)
+          : buildEnginePlan(eng.summary, amountBase, piggyAddress);
       } else {
         plan = buildEarnPlan(optionSummary(risk).slices, amountBase);
       }
@@ -408,13 +436,16 @@ function useChainView(): PiggyView {
     harvest: async () => ({ netBase: 0n }), // no yield on mock venues
     closePosition: async (amountBase) => {
       if (!piggyAddress) return;
-      const plan = buildClosePlan(
-        [
-          { key: "aave", base: aaveBase },
-          { key: "vault", base: vaultBase },
-        ],
-        amountBase,
-      );
+      // Base: WITHDRAW savings + SELL the held token back to USDC via the aggregator, split by USD value.
+      const plan = isBase
+        ? await buildBaseClosePlan(amountBase, aaveBase, heldBalance, fetchQuote)
+        : buildClosePlan(
+            [
+              { key: "aave", base: aaveBase },
+              { key: "vault", base: vaultBase },
+            ],
+            amountBase,
+          );
       await send({ address: piggyAddress, abi: accountAbi, functionName: "executePlan", args: [plan] });
       refresh();
     },

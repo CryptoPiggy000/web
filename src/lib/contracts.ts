@@ -212,6 +212,77 @@ export function aggregatorSwapAction(
   };
 }
 
+/**
+ * A DEX-aggregator quote fetcher (wired to `api.quote` in the app). Returns the approve+call target, the
+ * opaque calldata, the enforced `minOut`, and the expected `buyAmount` — enough to build a SWAP Action and
+ * to value a holding. Injected as a callback so this module stays free of the API layer.
+ */
+export type AggQuote = { router: string; routeData: string; minOut: string; buyAmount: string };
+export type QuoteFn = (
+  sellToken: `0x${string}`,
+  buyToken: `0x${string}`,
+  sellAmount: bigint,
+) => Promise<AggQuote>;
+
+/**
+ * The Base EARN plan: DEPOSIT the savings slice into Aave, and BUY the crypto slice USDC→held via the
+ * aggregator (real router/minOut from the quote — NOT the anvil mock router). Async because it fetches a
+ * live quote for the crypto amount.
+ */
+export async function buildBaseEarnPlan(
+  summary: { savingsPct: number; cryptoPct: number },
+  amountBase: bigint,
+  quote: QuoteFn,
+): Promise<PlanAction[]> {
+  const v = cryptoVenues;
+  if (!v) return [];
+  const savingsAmt = (amountBase * BigInt(summary.savingsPct)) / 100n;
+  const cryptoAmt = amountBase - savingsAmt;
+  const actions: PlanAction[] = [];
+  if (savingsAmt > 0n) actions.push(deposit(positionId(AAVE_KIND, v.aave), savingsAmt));
+  if (cryptoAmt > 0n) {
+    const usdc = USDC_ADDRESS as `0x${string}`;
+    const q = await quote(usdc, v.wsteth, cryptoAmt);
+    actions.push(aggregatorSwapAction(usdc, v.wsteth, cryptoAmt, q));
+  }
+  return actions;
+}
+
+/**
+ * The Base CLOSE plan: raise `amountBase` USD by unwinding proportionally — WITHDRAW the Aave savings and
+ * SELL the held token back to USDC via the aggregator. The held slice is valued with a quote (buyAmount),
+ * so the proportional split is by real USD value. Full close (`amountBase >= total`) unwinds everything.
+ */
+export async function buildBaseClosePlan(
+  amountBase: bigint,
+  aaveBase: bigint,
+  heldBalance: bigint,
+  quote: QuoteFn,
+): Promise<PlanAction[]> {
+  const v = cryptoVenues;
+  if (!v) return [];
+  const usdc = USDC_ADDRESS as `0x${string}`;
+
+  // Value the held slice up front (a quote for the full balance) so the split is by USD value.
+  const valQuote = heldBalance > 0n ? await quote(v.wsteth, usdc, heldBalance) : null;
+  const heldValue = valQuote ? BigInt(valQuote.buyAmount) : 0n;
+  const total = aaveBase + heldValue;
+  if (total === 0n) return [];
+  const full = amountBase >= total;
+
+  const actions: PlanAction[] = [];
+  const aaveCut = full ? aaveBase : (amountBase * aaveBase) / total;
+  if (aaveCut > 0n) actions.push(withdrawAction(aavePositionId(v.aave), aaveCut));
+
+  const heldToSell = full ? heldBalance : (heldBalance * amountBase) / total;
+  if (heldToSell > 0n) {
+    // Reuse the valuation quote when selling the whole balance; otherwise quote the exact fraction.
+    const sellQuote = valQuote && heldToSell === heldBalance ? valQuote : await quote(v.wsteth, usdc, heldToSell);
+    actions.push(aggregatorSwapAction(v.wsteth, usdc, heldToSell, sellQuote));
+  }
+  return actions;
+}
+
 /** A position to unwind when closing. Savings → WITHDRAW; a `sell` slice → SWAP the held token to USDC. */
 export type ClosePosition = {
   base: bigint; // position value in USD base units — sets each position's proportional share
