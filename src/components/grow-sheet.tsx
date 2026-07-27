@@ -8,7 +8,7 @@ import { HeroBalance } from "./hero-balance";
 import { IconPlus, IconTrendUp, IconChevronDown } from "./icons";
 import { usePiggyView, STRATEGY_ID } from "@/lib/piggy";
 import { optionSummary } from "@/lib/planner";
-import { api, API_MODE, type Strategy, type PlanDetail } from "@/lib/api";
+import { api, API_MODE, type Strategy } from "@/lib/api";
 import { DEPOSIT_FEE_BPS } from "@/lib/chain";
 import { fmtUsd } from "@/lib/format";
 import type { RiskTolerance } from "@/lib/types";
@@ -48,8 +48,6 @@ export function GrowSheet({
   const [showDetails, setShowDetails] = useState(false); // advanced allocation breakdown, opt-in
   const [result, setResult] = useState<{ title: string; sub?: string } | null>(null);
   const [strategies, setStrategies] = useState<Record<string, Strategy>>({});
-  const [planDetail, setPlanDetail] = useState<PlanDetail | null>(null);
-  const [loadingPlan, setLoadingPlan] = useState(false);
 
   // In API mode, pull the engine's live suggestions (v2: crypto-inclusive) when the sheet opens.
   useEffect(() => {
@@ -91,23 +89,8 @@ export function GrowSheet({
     }
   };
 
-  // Fetch the detailed plan (allocation + on-chain actions) for the picked strategy + amount.
-  const viewPlan = async () => {
-    if (!picked || !earnValid || loadingPlan) return;
-    setLoadingPlan(true);
-    try {
-      const p = await api.plan({ strategy: STRATEGY_ID[picked], amount: earnWei.toString(), term: "1y" });
-      setPlanDetail(p);
-    } catch (e) {
-      fail(e);
-    } finally {
-      setLoadingPlan(false);
-    }
-  };
-
   const startEarning = async () => {
     if (!picked || !earnValid || busy) return;
-    setPlanDetail(null); // leave the detail view so the busy spinner + result show
     setBusyMsg("Putting your money to work");
     setBusy(true);
     try {
@@ -154,7 +137,6 @@ export function GrowSheet({
 
   const close = () => {
     setResult(null);
-    setPlanDetail(null);
     setEarnAmount("");
     setCloseAmount("");
     setShowDetails(false);
@@ -163,88 +145,7 @@ export function GrowSheet({
 
   return (
     <Sheet open={open} onClose={close} title="Earn">
-      {planDetail ? (
-        <div className="flex flex-col gap-4">
-          {/* the mix: savings vs crypto */}
-          <div>
-            <div className="flex h-2.5 overflow-hidden rounded-full">
-              {planDetail.summary.savingsPct > 0 && (
-                <div style={{ width: `${planDetail.summary.savingsPct}%` }} className="bg-accent" />
-              )}
-              {planDetail.summary.cryptoPct > 0 && (
-                <div style={{ width: `${planDetail.summary.cryptoPct}%` }} className="bg-crypto" />
-              )}
-            </div>
-            <div className="mt-1.5 flex justify-between text-xs text-muted">
-              <span>{planDetail.summary.savingsPct}% savings</span>
-              <span>{planDetail.summary.cryptoPct}% crypto</span>
-            </div>
-          </div>
-
-          {/* steady + growth */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-xl border border-line bg-card p-3">
-              <p className="text-xs text-muted">Steady · savings</p>
-              <p className="mt-0.5 font-semibold text-good">
-                ≈{(planDetail.summary.blendedYieldBps / 100).toFixed(1)}%/yr
-              </p>
-            </div>
-            <div className="rounded-xl border border-line bg-card p-3">
-              <p className="text-xs text-muted">Growth · crypto</p>
-              <p className="mt-0.5 font-semibold text-crypto">
-                {pctBps(planDetail.summary.cryptoExpectedBps)} typical
-              </p>
-              <p className="text-xs text-muted">
-                {pctBps(planDetail.summary.cryptoDownsideBps)} … {pctBps(planDetail.summary.cryptoUpsideBps)}
-              </p>
-            </div>
-          </div>
-
-          {/* per-venue allocation */}
-          <ul className="space-y-2 text-sm">
-            {planDetail.allocation.map((a) => (
-              <li key={a.position_id} className="flex items-center gap-2.5">
-                <span
-                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${a.class === "crypto" ? "bg-crypto" : "bg-accent"}`}
-                />
-                <span className="flex-1">{a.symbol}</span>
-                <span className="text-muted">{a.pct}%</span>
-                <span className="w-28 text-right text-muted">
-                  {a.class === "crypto"
-                    ? `${pctBps(a.expected_return_bps)} typ.`
-                    : `≈${(a.apy_bps / 100).toFixed(1)}%/yr`}
-                </span>
-              </li>
-            ))}
-          </ul>
-
-          {/* on-chain steps */}
-          <div className="rounded-xl border border-line bg-paper p-3">
-            <p className="mb-2 text-xs font-medium text-muted">
-              On-chain steps you sign ({planDetail.actions.length})
-            </p>
-            <ul className="space-y-1 font-mono text-xs">
-              {planDetail.actions.map((act, i) => (
-                <li key={i} className="flex justify-between">
-                  <span>{act.kind === 0 ? "Deposit" : act.kind === 1 ? "Withdraw" : "Buy crypto"}</span>
-                  <span className="text-muted">{fmtUsd(BigInt(act.amount || "0"))}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <p className="text-xs text-muted">{planDetail.reasoning}</p>
-
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setPlanDetail(null)}>
-              Back
-            </Button>
-            <Button full icon={<IconTrendUp />} disabled={busy} onClick={startEarning}>
-              {busy ? "Working…" : "Start earning"}
-            </Button>
-          </div>
-        </div>
-      ) : result ? (
+      {result ? (
         <SheetSuccess title={result.title} onDone={close}>
           {result.sub}
         </SheetSuccess>
@@ -396,17 +297,6 @@ export function GrowSheet({
                               </div>
                             </div>
                           ) : null}
-
-                          {pickedStrategy && (
-                            <Button
-                              variant="secondary"
-                              full
-                              disabled={!earnValid || loadingPlan}
-                              onClick={viewPlan}
-                            >
-                              {loadingPlan ? "Loading plan…" : "View plan"}
-                            </Button>
-                          )}
                         </div>
                       )}
                     </div>
