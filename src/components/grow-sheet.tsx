@@ -452,6 +452,9 @@ export function GrowSheet({
                 <Button full icon={<IconTrendUp />} disabled={!picked || !earnValid || busy} onClick={startEarning}>
                   {busy ? "Working…" : "Start earning"}
                 </Button>
+                <p className="text-center text-xs text-muted">
+                  Informational, not investment advice — you choose and sign every transaction.
+                </p>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-3 py-4 text-center">

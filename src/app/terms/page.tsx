@@ -20,14 +20,20 @@ export default function TermsPage() {
         ← Back
       </a>
       <h1 className="mt-4 text-2xl font-semibold tracking-tight">Terms of Service</h1>
-      <p className="mt-1 text-xs text-muted">Last updated 2026-07-19</p>
+      <p className="mt-1 text-xs text-muted">Last updated 2026-07-27</p>
 
       <Section n="1" title="What CryptoPiggy is">
         <p>
-          CryptoPiggy is <span className="font-medium text-ink">non-custodial software</span> that helps
-          you deploy your own crypto assets into on-chain protocols. Your funds are held in a smart
-          account that only you control. We never take custody of, hold, or have the ability to move your
-          funds. Every transaction is signed and submitted by you.
+          CryptoPiggy is a <span className="font-medium text-ink">non-custodial software toolkit</span>{" "}
+          that helps you deploy your own crypto assets into on-chain protocols. Your funds are held in a
+          smart account that only you control. We never take custody of, hold, or have the ability to move
+          your funds. Every transaction is signed and submitted by you.
+        </p>
+        <p>
+          It is a <span className="font-medium text-ink">toolkit — not a bank, broker, exchange, or money
+          transmitter</span>. Your assets are not bank deposits and are{" "}
+          <span className="font-medium text-ink">not insured</span> (no FDIC or SIPC protection). Words
+          like “savings” or “earn” describe on-chain protocol yield, not a bank account.
         </p>
       </Section>
 
@@ -37,6 +43,12 @@ export default function TermsPage() {
           <span className="font-medium text-ink">informational only and is not investment, financial,
           legal, or tax advice</span>, and is not a recommendation to buy, sell, or hold any asset. You
           are solely responsible for your decisions. Consider seeking advice from a licensed professional.
+        </p>
+        <p>
+          CryptoPiggy is <span className="font-medium text-ink">not a broker, dealer, investment adviser,
+          or fiduciary</span>. We do not manage any account for you or exercise any discretion over your
+          assets — <span className="font-medium text-ink">you choose every allocation and sign every
+          transaction</span>, and the software only carries out what you decide.
         </p>
       </Section>
 

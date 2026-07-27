@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "./button";
 
 // Bump this when the terms materially change — everyone re-accepts on their next visit.
-const TERMS_VERSION = "2026-07-19";
+const TERMS_VERSION = "2026-07-27";
 const STORAGE_KEY = "cryptopiggy:terms";
 
 /**
