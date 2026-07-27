@@ -103,7 +103,10 @@ export function buildEarnPlan(
 // The crypto venue + swap router per chain, for executing the ENGINE's crypto slice on-chain. Anvil
 // (31337) = the DeployLocal deterministic deploy (wstETH stands in for the crypto held asset; the mock
 // router swaps USDC→wstETH). Absent on a chain → the engine plan can't execute crypto there (savings only).
-const CRYPTO_VENUES: Record<number, { aave: `0x${string}`; wsteth: `0x${string}`; router: `0x${string}` }> = {
+const CRYPTO_VENUES: Record<
+  number,
+  { aave: `0x${string}`; wsteth: `0x${string}`; router: `0x${string}`; atoken?: `0x${string}` }
+> = {
   31337: {
     aave: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
     wsteth: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
@@ -113,6 +116,8 @@ const CRYPTO_VENUES: Record<number, { aave: `0x${string}`; wsteth: `0x${string}`
   // from the DEX-aggregator quote (api.quote → /market/quote → 0x/KyberSwap), not a fixed router here.
   8453: {
     aave: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5", // Base Aave V3 Pool (savings deposit)
+    // Aave V3 has no supplied() view; the account's savings = aToken balance. aBasUSDC (1:1 USDC, 6dp).
+    atoken: "0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB",
     wsteth: "0x4200000000000000000000000000000000000006", // WETH (held asset; aggregator-routed)
     router: "0x0000000000000000000000000000000000000000", // unused on Base — router is per-quote
   },

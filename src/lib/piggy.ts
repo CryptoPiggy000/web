@@ -203,7 +203,11 @@ function useChainView(): PiggyView {
     query: { enabled: Boolean(piggyAddress), refetchInterval: 8_000 },
     contracts: piggyAddress
       ? [
-          { address: savingsAave, abi: aaveAbi, functionName: "supplied", args: [piggyAddress, USDC_ADDRESS as `0x${string}`] },
+          // Aave savings balance. Real Aave V3 (Base) has no supplied() view — the account's savings =
+          // its aToken balance (1:1 USDC). Off-Base (Sepolia mock) still exposes supplied().
+          isBase && cryptoVenues?.atoken
+            ? { address: cryptoVenues.atoken, abi: erc20Abi, functionName: "balanceOf", args: [piggyAddress] }
+            : { address: savingsAave, abi: aaveAbi, functionName: "supplied", args: [piggyAddress, USDC_ADDRESS as `0x${string}`] },
           { address: VAULT_ADDRESS, abi: vaultAbi, functionName: "maxWithdraw", args: [piggyAddress] },
           { address: heldToken, abi: erc20Abi, functionName: "balanceOf", args: [piggyAddress] },
         ]
