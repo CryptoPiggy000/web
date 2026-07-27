@@ -132,16 +132,7 @@ export function DepositSheet({
             {copied ? "Copied" : "Copy address"}
           </Button>
           <p className="text-sm text-muted">Send USDC on {activeChain.name}. Nothing else.</p>
-          {CHAIN_MODE ? (
-            <a
-              href="https://faucet.circle.com/"
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm text-accent underline underline-offset-4"
-            >
-              Need test USDC? Circle Sepolia faucet
-            </a>
-          ) : (
+          {!CHAIN_MODE && (
             <button
               onClick={() => setMode("choose")}
               className="text-sm text-muted underline underline-offset-4 hover:text-ink"
