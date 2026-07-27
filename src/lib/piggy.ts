@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { useWallets } from "@privy-io/react-auth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPublicClient, createWalletClient, http, parseAbi, erc20Abi, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -11,7 +11,7 @@ import { useTxSender, type ContractWrite } from "./sponsored";
 import { usePiggy } from "./usePiggy";
 import { useSim, deployedTotalWei, accruedWei } from "./sim";
 import { optionSummary } from "./planner";
-import { api, API_MODE, runOp } from "./api";
+import { api, API_MODE } from "./api";
 import { USDC_ADDRESS, FACTORY_ADDRESS, OPS_URL, activeChain } from "./chain";
 import {
   CHAIN_MODE,
@@ -33,8 +33,6 @@ import {
 import type { ActivityEntry, RiskTolerance } from "./types";
 
 const ZERO_SALT = ("0x" + "0".repeat(64)) as `0x${string}`;
-
-const DEMO_SPEED = 8000; // match backend mock + client sim so the live tick lines up
 
 /** RiskTolerance (UI) → strategy id (API / market). */
 export const STRATEGY_ID: Record<RiskTolerance, string> = {
@@ -179,103 +177,6 @@ function useSimView(): PiggyView {
     addFiat,
     withdraw,
     reset: sim.reset,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// API source — active when NEXT_PUBLIC_API_URL is set (talks to the backend).
-// ---------------------------------------------------------------------------
-function useApiView(): PiggyView {
-  const { authenticated, getAccessToken } = usePrivy();
-  const qc = useQueryClient();
-
-  const sessionQ = useQuery({
-    queryKey: ["session"],
-    enabled: authenticated,
-    staleTime: 50 * 60_000,
-    queryFn: async () => {
-      const token = await getAccessToken();
-      return api.verify(token ?? "");
-    },
-  });
-  const hasSession = Boolean(sessionQ.data);
-
-  const portfolioQ = useQuery({
-    queryKey: ["portfolio"],
-    enabled: hasSession,
-    refetchInterval: 5_000,
-    queryFn: api.portfolio,
-  });
-  const activityQ = useQuery({
-    queryKey: ["activity"],
-    enabled: hasSession,
-    refetchInterval: 5_000,
-    queryFn: api.activity,
-  });
-
-  const p = portfolioQ.data;
-  const deployed = p ? BigInt(p.principal.base) : 0n;
-  const resting = p ? BigInt(p.resting.base) : 0n;
-  const totalUsd = p ? Number(p.total.base) / 1e6 : 0;
-  const apyBps = p?.apyBps ?? 0;
-  const fetchedAt = portfolioQ.dataUpdatedAt; // 0 before first fetch (then deployed=0 → rate=0)
-  const ratePerMs = (Number(deployed) * (apyBps / 10000) * DEMO_SPEED) / (365 * 24 * 60 * 60 * 1000) / 1e6;
-
-  const refresh = useCallback(() => {
-    qc.invalidateQueries({ queryKey: ["portfolio"] });
-    qc.invalidateQueries({ queryKey: ["activity"] });
-  }, [qc]);
-
-  return {
-    ready: portfolioQ.isSuccess,
-    piggyAddress: sessionQ.data?.user.piggy as `0x${string}` | undefined,
-    restingBase: resting,
-    withdrawableBase: resting,
-    deployedBase: deployed,
-    positions: (p?.positions ?? []).map((s) => ({
-      key: s.key,
-      name: s.name,
-      base: BigInt(s.base),
-      apyBps: s.apyBps,
-    })),
-    apyBps,
-    activity: (activityQ.data?.items ?? []).map((a) => ({
-      ts: a.ts,
-      type: a.type as ActivityEntry["type"],
-      summary: a.summary,
-      txHash: a.txHash,
-    })),
-    empty: Boolean(p) && totalUsd === 0,
-    earning: deployed > 0n,
-    liveTotalUsd: (now) => totalUsd + Math.max(0, ratePerMs * (now - fetchedAt)),
-    liveAccruedUsd: (now) =>
-      (p ? Number(p.accrued.base) / 1e6 : 0) + Math.max(0, ratePerMs * (now - fetchedAt)),
-    bumpValueUsd: totalUsd,
-    earn: async (amountBase, risk) => {
-      await runOp(api.buildEarn(amountBase.toString(), STRATEGY_ID[risk]));
-      refresh();
-    },
-    harvest: async () => {
-      const op = await api.buildHarvest();
-      await api.submit(op.operationId, "0x");
-      refresh();
-      const pv = op.preview as { netBase?: string };
-      return { netBase: BigInt(pv.netBase ?? "0") };
-    },
-    closePosition: async (amountBase) => {
-      await runOp(api.buildExit(amountBase.toString()));
-      refresh();
-    },
-    addFiat: async (amountUsd) => {
-      await api.onramp(amountUsd.toFixed(2));
-      refresh();
-    },
-    withdraw: async (to, amountBase) => {
-      const r = await runOp(api.buildWithdraw(to, amountBase.toString()));
-      refresh();
-      return { txHash: r.txHash };
-    },
-    reset: () => {},
   };
 }
 
@@ -605,11 +506,9 @@ function useDevChainView(): PiggyView {
 }
 
 /** The one hook the UI uses. Bound at module load — no conditional hooks. Dev mock-wallet (anvil,
- *  no login) when NEXT_PUBLIC_DEV_WALLET=1; else chain when the factory is set; else backend; else sim. */
+ *  no login) when NEXT_PUBLIC_DEV_WALLET=1; else chain when the factory is set; else the Phase-0 sim. */
 export const usePiggyView: () => PiggyView = DEV_WALLET
   ? useDevChainView
   : CHAIN_MODE
     ? useChainView
-    : API_MODE
-      ? useApiView
-      : useSimView;
+    : useSimView;

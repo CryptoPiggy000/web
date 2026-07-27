@@ -1,20 +1,17 @@
-// Client for the backend (web/API.md). Active only when NEXT_PUBLIC_API_URL is set;
-// otherwise the app runs the Phase-0 client sim. Session is kept module-level (single user).
+// Client for the backend MARKET endpoints (web/API.md): strategy suggestions, plan detail, and swap
+// quotes. Active only when NEXT_PUBLIC_API_URL is set; otherwise the app runs the Phase-0 client sim.
+// All public reads — no session/auth here: on-chain execution is built + signed client-side (useChainView),
+// and the Portfolio reads the public ops indexer directly, so the backend never authenticates the user.
 const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
 export const API_MODE = Boolean(API_URL);
 
-let session: string | null = null;
-
 async function req<T = unknown>(
   path: string,
-  opts: { method?: string; body?: unknown; idem?: string } = {},
+  opts: { method?: string; body?: unknown } = {},
 ): Promise<T> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (session) headers["authorization"] = `Bearer ${session}`;
-  if (opts.idem) headers["idempotency-key"] = opts.idem;
   const res = await fetch(`${API_URL}${path}`, {
     method: opts.method ?? "GET",
-    headers,
+    headers: { "content-type": "application/json" },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   });
   const json = await res.json().catch(() => ({}));
@@ -23,26 +20,6 @@ async function req<T = unknown>(
     throw new Error(e?.message ?? `HTTP ${res.status}`);
   }
   return json as T;
-}
-
-export interface Money {
-  base: string;
-  usd?: string;
-}
-export interface Portfolio {
-  total: Money;
-  resting: Money & { pendingBase?: string };
-  earning: Money;
-  principal: Money;
-  accrued: Money;
-  apyBps: number;
-  positions: { key: string; name: string; base: string; apyBps: number }[];
-}
-export interface BuiltOp {
-  operationId: string;
-  expiresAt: number;
-  preview: Record<string, unknown>;
-  toSign: { type: string; value: string };
 }
 
 // The engine's suggested allocations (v2, crypto-inclusive). A strategy is a savings/crypto mix with a
@@ -114,54 +91,14 @@ export interface PlanDetail {
 }
 
 export const api = {
-  async verify(privyToken: string) {
-    const r = await req<{ session: string; user: { id: string; owner: string; piggy: string } }>(
-      "/auth/verify",
-      { method: "POST", body: { privyToken } },
-    );
-    session = r.session;
-    return r;
-  },
-  portfolio: () => req<Portfolio>("/me/portfolio"),
+  // The 3 suggested strategies (risk presets) for the chooser, conditioned on ?term.
   strategies: (term = "1y") =>
     req<{ strategies: Strategy[] }>(`/market/strategies?term=${term}`),
-  // The full plan for a chosen strategy/risk + amount — the View-plan detail (allocation + actions).
+  // The full plan for a chosen strategy/risk + amount — the "View plan" detail (allocation + actions).
   plan: (body: { strategy?: string; risk?: number; amount?: string; term?: string; holdings?: unknown }) =>
     req<PlanDetail>("/market/plan", { method: "POST", body }),
   // Best DEX-aggregator swap quote (0x + KyberSwap, best fill) for a held-asset buy/sell. Approve-and-call:
   // the client drops `router`/`routeData`/`minOut` straight into a SWAP Action; the account enforces minOut.
   quote: (body: { sellToken: string; buyToken: string; sellAmount: string; taker: string; slippageBps?: number; chainId?: number }) =>
     req<SwapQuote>("/market/quote", { method: "POST", body }),
-  activity: () =>
-    req<{ items: { id: string; ts: number; type: string; summary: string; txHash?: string }[] }>(
-      "/me/activity",
-    ),
-
-  buildEarn: (amount: string, strategy: string) =>
-    req<BuiltOp>("/operations/earn", { method: "POST", body: { amount, strategy } }),
-  buildHarvest: () => req<BuiltOp>("/operations/harvest", { method: "POST", body: {} }),
-  buildExit: (amount: string) =>
-    req<BuiltOp>("/operations/exit", { method: "POST", body: { amount } }),
-  buildWithdraw: (to: string, amount: string) =>
-    req<BuiltOp>("/operations/withdraw", { method: "POST", body: { to, amount } }),
-  submit: (id: string, signature: string) =>
-    req<{ status: string; txHash: string }>(`/operations/${id}/submit`, {
-      method: "POST",
-      body: { signature },
-      idem: id,
-    }),
-
-  onramp: (amountUsd: string) =>
-    req<{ sessionId: string; checkoutUrl: string }>("/onramp/session", {
-      method: "POST",
-      body: { amountUsd, method: "card" },
-    }),
 };
-
-/** Build → sign → submit, one call. Mock ignores the signature; real signing wires here later. */
-export async function runOp(build: Promise<BuiltOp>): Promise<{ txHash: string }> {
-  const op = await build;
-  // TODO(prod): sign op.toSign.value with the Privy embedded wallet before submit.
-  const signature = "0x";
-  return api.submit(op.operationId, signature);
-}
