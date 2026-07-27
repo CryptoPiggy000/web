@@ -293,14 +293,7 @@ export function GrowSheet({
                       >
                         <span className="font-medium">{c.label}</span>
                         {bs ? (
-                          <span className="flex items-center gap-2 text-sm">
-                            {bs.cryptoPct > 0 && (
-                              <span className="rounded-full bg-crypto/15 px-2 py-0.5 text-xs text-crypto">
-                                {bs.cryptoPct}% crypto
-                              </span>
-                            )}
-                            <span className="text-good">~{(bs.expectedReturnBps / 100).toFixed(0)}%/yr</span>
-                          </span>
+                          <span className="text-sm text-good">~{(bs.expectedReturnBps / 100).toFixed(0)}%/yr</span>
                         ) : (
                           <span className="text-sm text-good">≈{s.yieldApy.toFixed(1)}%/yr</span>
                         )}
@@ -351,8 +344,8 @@ export function GrowSheet({
                                     <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-crypto" />
                                     <span className="flex-1">Crypto (BTC/ETH)</span>
                                     <span className="text-muted">{pickedStrategy.cryptoPct}%</span>
-                                    <span className="w-20 text-right text-crypto">
-                                      {pctBps(pickedStrategy.upsideBps)} up
+                                    <span className="w-28 text-right tabular-nums text-crypto">
+                                      {pctBps(pickedStrategy.downsideBps)}…{pctBps(pickedStrategy.upsideBps)}
                                     </span>
                                   </li>
                                 )}
