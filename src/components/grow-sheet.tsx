@@ -334,8 +334,8 @@ export function GrowSheet({
                                 <li className="flex items-center gap-2.5">
                                   <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />
                                   <span className="flex-1">Savings (USDC)</span>
-                                  <span className="text-muted">{pickedStrategy.savingsPct}%</span>
-                                  <span className="w-20 text-right text-good">
+                                  <span className="w-10 text-right tabular-nums text-muted">{pickedStrategy.savingsPct}%</span>
+                                  <span className="w-28 text-right tabular-nums text-good">
                                     ≈{(pickedStrategy.apyBps / 100).toFixed(1)}%/yr
                                   </span>
                                 </li>
@@ -343,7 +343,7 @@ export function GrowSheet({
                                   <li className="flex items-center gap-2.5">
                                     <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-crypto" />
                                     <span className="flex-1">Crypto (BTC/ETH)</span>
-                                    <span className="text-muted">{pickedStrategy.cryptoPct}%</span>
+                                    <span className="w-10 text-right tabular-nums text-muted">{pickedStrategy.cryptoPct}%</span>
                                     <span className="w-28 text-right tabular-nums text-crypto">
                                       {pctBps(pickedStrategy.downsideBps)}…{pctBps(pickedStrategy.upsideBps)}
                                     </span>
