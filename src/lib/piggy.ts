@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPublicClient, createWalletClient, http, parseAbi, erc20Abi, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
-import { useReadContracts, useWriteContract, usePublicClient } from "wagmi";
+import { useReadContract, useReadContracts, useWriteContract, usePublicClient } from "wagmi";
 import { useTxSender, type ContractWrite } from "./sponsored";
 import { usePiggy } from "./usePiggy";
 import { useSim, deployedTotalWei, accruedWei } from "./sim";
@@ -22,6 +22,7 @@ import {
   accountAbi,
   aaveAbi,
   vaultAbi,
+  chainlinkAbi,
   buildEarnPlan,
   buildEnginePlan,
   buildClosePlan,
@@ -210,6 +211,9 @@ function useChainView(): PiggyView {
             : { address: savingsAave, abi: aaveAbi, functionName: "supplied", args: [piggyAddress, USDC_ADDRESS as `0x${string}`] },
           { address: VAULT_ADDRESS, abi: vaultAbi, functionName: "maxWithdraw", args: [piggyAddress] },
           { address: heldToken, abi: erc20Abi, functionName: "balanceOf", args: [piggyAddress] },
+          // Idle USDC read in the SAME multicall as the positions, so idle + deployed share one atomic
+          // snapshot — no flicker when funds move between them (the "$7.5 then $5" glitch on close).
+          { address: USDC_ADDRESS as `0x${string}`, abi: erc20Abi, functionName: "balanceOf", args: [piggyAddress] },
         ]
       : [],
   });
@@ -217,6 +221,18 @@ function useChainView(): PiggyView {
   const vaultBase = (positionsRead.data?.[1]?.result as bigint | undefined) ?? 0n;
   // Held token (Base crypto slice); only consulted when isBase, so the off-Base USDC fallback is ignored.
   const heldBalance = isBase ? (positionsRead.data?.[2]?.result as bigint | undefined) ?? 0n : 0n;
+
+  // Chainlink ETH/USD (Base) to value the WETH slice on-chain — same freshness as the balance reads, so a
+  // just-unwound crypto slice never lingers in the total (separate hook: it returns a tuple, not a uint).
+  const feedRead = useReadContract({
+    address: isBase ? cryptoVenues?.priceFeed : undefined,
+    abi: chainlinkAbi,
+    functionName: "latestRoundData",
+    query: { enabled: Boolean(isBase && cryptoVenues?.priceFeed && piggyAddress), refetchInterval: 8_000 },
+  });
+  // heldBalance(1e18) × price(1e8) → µUSD(1e6) = /1e20. Feed answer is the 2nd tuple field.
+  const ethPrice8 = (feedRead.data as readonly bigint[] | undefined)?.[1] ?? 0n;
+  const heldValue = isBase && ethPrice8 > 0n ? (heldBalance * ethPrice8) / 10n ** 20n : 0n;
 
   // The DEX-aggregator quote fetcher for on-chain swaps (Base): api.quote → 0x/KyberSwap best fill.
   const fetchQuote = useCallback(
@@ -233,7 +249,9 @@ function useChainView(): PiggyView {
     [piggyAddress],
   );
 
-  const idle = balance; // USDC sitting in the account
+  // Idle USDC — from the positions multicall (atomic with aToken/held), falling back to usePiggy's own
+  // read before the multicall first resolves.
+  const idle = (positionsRead.data?.[3]?.result as bigint | undefined) ?? balance;
 
   // Ops indexer (public /account/:addr) when configured: real interest, activity, and the FULL per-venue
   // position breakdown (many Morpho vaults + crypto) — what the 2 hardcoded chain reads can't give.
@@ -256,31 +274,57 @@ function useChainView(): PiggyView {
   const ops = opsQ.data;
   const useOps = Boolean(ops?.positions?.length); // ops knows all venues → prefer it over the 2 chain reads
 
-  // Positions + deployed: ops breakdown when available, else the two hardcoded chain venues (Sepolia).
-  const positions: Position[] = useOps
-    ? ops!.positions.map((p) => ({
-        key: p.key,
-        name: p.name,
-        base: BigInt(Math.round(p.valueUsd * 1e6)),
-        apyBps: 0, // ops has no APY; enriched off-chain / omitted
-        cls: p.class,
-      }))
-    : (
-        [
-          { key: "aave", base: aaveBase },
-          { key: "vault", base: vaultBase },
-        ] as const
-      )
-        .filter((p) => p.base > 0n)
-        .map((p) => ({ key: p.key, name: POSITIONS[p.key].name, base: p.base, apyBps: POSITIONS[p.key].apyBps }));
+  // Positions + deployed.
+  // On Base: read from CHAIN (aToken savings + WETH×price) so the total shares ONE freshness with `idle`.
+  // The ops indexer lags, so summing idle(fresh) + ops-deployed(stale) briefly double-counts a
+  // just-unwound slice — that's the "$7.5 then $5 on refresh" glitch. Off-Base: ops breakdown when
+  // present, else the two Sepolia mock venues.
+  const positions: Position[] = isBase
+    ? [
+        ...(aaveBase > 0n
+          ? [{ key: "aave", name: "Aave lending", base: aaveBase, apyBps: 0, cls: "savings" as const }]
+          : []),
+        ...(heldValue > 0n
+          ? [
+              {
+                key: (cryptoVenues?.wsteth ?? "").toLowerCase(),
+                name: "WETH",
+                base: heldValue,
+                apyBps: 0,
+                cls: "crypto" as const,
+              },
+            ]
+          : []),
+      ]
+    : useOps
+      ? ops!.positions.map((p) => ({
+          key: p.key,
+          name: p.name,
+          base: BigInt(Math.round(p.valueUsd * 1e6)),
+          apyBps: 0, // ops has no APY; enriched off-chain / omitted
+          cls: p.class,
+        }))
+      : (
+          [
+            { key: "aave", base: aaveBase },
+            { key: "vault", base: vaultBase },
+          ] as const
+        )
+          .filter((p) => p.base > 0n)
+          .map((p) => ({ key: p.key, name: POSITIONS[p.key].name, base: p.base, apyBps: POSITIONS[p.key].apyBps }));
 
-  const deployed = useOps ? positions.reduce((a, p) => a + p.base, 0n) : aaveBase + vaultBase;
+  const deployed = isBase
+    ? aaveBase + heldValue
+    : useOps
+      ? positions.reduce((a, p) => a + p.base, 0n)
+      : aaveBase + vaultBase;
   const total = idle + deployed;
-  const apyBps = useOps
-    ? 0
-    : deployed > 0n
-      ? Math.round(Number(aaveBase * 280n + vaultBase * 410n) / Number(deployed))
-      : 0;
+  const apyBps =
+    isBase || useOps
+      ? 0
+      : deployed > 0n
+        ? Math.round(Number(aaveBase * 280n + vaultBase * 410n) / Number(deployed))
+        : 0;
 
   const opsActivity: ActivityEntry[] = (ops?.activity ?? []).map((a) => ({
     ts: a.ts ?? 0,
@@ -312,7 +356,9 @@ function useChainView(): PiggyView {
     activity: opsActivity, // real feed from the ops indexer (empty when not configured)
     empty: total === 0n,
     earning: deployed > 0n,
-    liveTotalUsd: () => Number(total) / 1e6 + opsAccrued, // chain principal + real accrued (0 if no ops)
+    // Base: `total` is the live chain value (aToken + WETH×price) — already includes gains, so don't add
+    // opsAccrued again. Off-Base (mock venues don't accrue): add the ops-reported accrued.
+    liveTotalUsd: () => Number(total) / 1e6 + (isBase ? 0 : opsAccrued),
     liveAccruedUsd: () => opsAccrued,
     bumpValueUsd: Number(total) / 1e6,
     earn: async (amountBase, risk) => {

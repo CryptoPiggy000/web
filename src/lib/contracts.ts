@@ -105,7 +105,13 @@ export function buildEarnPlan(
 // router swaps USDC→wstETH). Absent on a chain → the engine plan can't execute crypto there (savings only).
 const CRYPTO_VENUES: Record<
   number,
-  { aave: `0x${string}`; wsteth: `0x${string}`; router: `0x${string}`; atoken?: `0x${string}` }
+  {
+    aave: `0x${string}`;
+    wsteth: `0x${string}`;
+    router: `0x${string}`;
+    atoken?: `0x${string}`;
+    priceFeed?: `0x${string}`; // Chainlink USD feed for the held asset (values the crypto slice on-chain)
+  }
 > = {
   31337: {
     aave: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
@@ -120,8 +126,15 @@ const CRYPTO_VENUES: Record<
     atoken: "0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB",
     wsteth: "0x4200000000000000000000000000000000000006", // WETH (held asset; aggregator-routed)
     router: "0x0000000000000000000000000000000000000000", // unused on Base — router is per-quote
+    priceFeed: "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70", // Chainlink ETH/USD on Base (8dp)
   },
 };
+
+// Chainlink price feed — used to value the held crypto slice on-chain (same freshness as the balance
+// read, so a just-unwound position never lingers in the total). USD feeds are 8-decimal.
+export const chainlinkAbi = parseAbi([
+  "function latestRoundData() view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)",
+]);
 export const cryptoVenues = CRYPTO_VENUES[activeChain.id];
 
 const routerAbi = parseAbi([
