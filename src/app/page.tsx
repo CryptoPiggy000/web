@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Piggy } from "@/components/piggy";
 import { Button } from "@/components/button";
 import { LiveStats } from "@/components/live-stats";
+import { AnimaField } from "@/components/anima-field";
 import { Reveal, useInView } from "@/components/motion";
 import { IconShield, IconTrendUp, IconSparkle, IconCard } from "@/components/icons";
 
@@ -61,17 +62,21 @@ const TRUST = [
   },
 ];
 
-const HEAD_LINES = [["Your", "idle", "money,"], ["working", "for", "you."]];
-
 export default function Landing() {
   const router = useRouter();
   const launch = () => router.push("/app");
 
   return (
-    <div className="min-h-dvh bg-paper text-ink">
-      {/* ── top nav ── */}
-      <header className="sticky top-0 z-40 border-b border-line/70 bg-paper/85 backdrop-blur">
-        <nav className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8">
+    <div className="theme-dark min-h-dvh bg-paper text-ink">
+      {/* ── hero: a dark living particle field ── */}
+      <section className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-[#0b0613] text-[#f6eef3]">
+        <AnimaField className="pointer-events-none absolute inset-0 -z-10 h-full w-full" />
+        {/* vignette + a soft pink core glow behind the field */}
+        <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(120%_90%_at_50%_38%,transparent_38%,rgba(5,2,12,0.74))]" />
+        <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(52%_42%_at_50%_46%,rgba(255,61,127,0.18),transparent_62%)]" />
+
+        {/* nav (over the dark stage) */}
+        <nav className="relative z-20 mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
           <span className="flex items-center gap-2 font-bold tracking-tight">
             <Piggy className="w-7" />
             Crypto<span className="text-accent">Piggy</span>
@@ -80,81 +85,53 @@ export default function Landing() {
             Launch app
           </Button>
         </nav>
-      </header>
 
-      {/* ── hero ── */}
-      <section className="mx-auto grid max-w-6xl items-center gap-10 px-5 pb-8 pt-14 sm:px-8 md:grid-cols-2 md:gap-6 md:pb-16 md:pt-24">
-        <div className="text-center md:text-left">
-          <span className="animate-rise inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-muted">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            More than a savings app
-          </span>
-          <h1 className="mt-5 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl md:text-[3.4rem]">
-            {HEAD_LINES.map((line, li) => (
-              <span key={li} className="block">
-                {line.map((word, wi) => {
-                  const idx = li * 3 + wi;
-                  return (
-                    <span
-                      key={wi}
-                      className="animate-word-in"
-                      style={{ animationDelay: `${120 + idx * 90}ms` }}
-                    >
-                      {word}
-                      {wi < line.length - 1 ? " " : ""}
-                    </span>
-                  );
-                })}
-              </span>
-            ))}
-          </h1>
-          <p
-            className="animate-rise mx-auto mt-5 max-w-md text-lg leading-relaxed text-muted md:mx-0"
-            style={{ animationDelay: "640ms" }}
-          >
-            Spare cash comes in and grows on its own. You make the call, AI does the homework — and it
-            never leaves your wallet.
-          </p>
-          <div
-            className="animate-rise mt-8 flex flex-col items-center gap-3 sm:flex-row md:items-start"
-            style={{ animationDelay: "760ms" }}
-          >
-            <Button size="lg" onClick={launch} className="w-full sm:w-auto">
-              Start growing
-            </Button>
-            <a
-              href="#how"
-              className="inline-flex w-full items-center justify-center rounded-2xl border border-line px-6 py-4 text-base font-medium text-ink transition-colors hover:border-muted hover:bg-card sm:w-auto"
-            >
-              See how it works
-            </a>
-          </div>
-          <p
-            className="animate-rise mt-4 text-xs text-muted"
-            style={{ animationDelay: "860ms" }}
-          >
-            Free to start · Email or Google · Withdraw anytime
-          </p>
+        {/* spec rail (desktop) */}
+        <div className="pointer-events-none absolute right-6 top-1/2 hidden -translate-y-1/2 text-right font-mono text-[10.5px] uppercase leading-[2.4] tracking-[0.18em] text-white/45 sm:right-8 lg:block">
+          Living plan<br />Cursor-reactive<br />Idle · Earning · Growth<br />Non-custodial<br />—<br />Built 2026
         </div>
 
-        {/* illustration — coins drop into the piggy */}
-        <div className="relative mx-auto flex aspect-square w-full max-w-sm items-center justify-center">
-          <div className="animate-ring-pulse absolute inset-6 rounded-full bg-accent/10" />
-          <div className="animate-ring-pulse absolute inset-6 rounded-full bg-accent/10 [animation-delay:1.2s]" />
-          <div className="animate-ring-pulse absolute inset-6 rounded-full bg-accent/10 [animation-delay:2.4s]" />
-
-          <div className="animate-piggy-enter relative [animation-delay:200ms]">
-            <div className="animate-piggy-breathe">
-              <Piggy className="w-64 drop-shadow-sm sm:w-72" />
+        {/* core — anchored lower-left, editorial */}
+        <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-1 flex-col justify-end px-5 pb-[clamp(2.5rem,10vh,6rem)] sm:px-8">
+          <span className="animate-rise inline-flex w-fit items-center gap-3 font-mono text-[11px] uppercase tracking-[0.26em] text-white/55">
+            <span className="h-px w-8 bg-white/25" />
+            Your money, quietly at work
+          </span>
+          <h1
+            className="animate-rise mt-6 max-w-[15ch] text-balance text-[clamp(2.8rem,9vw,6.4rem)] font-semibold leading-[0.96] tracking-tight"
+            style={{ animationDelay: "140ms" }}
+          >
+            Your idle money,{" "}
+            <em className="bg-gradient-to-r from-accent via-[#c77dff] to-[#ff9e6a] bg-clip-text not-italic text-transparent">
+              working
+            </em>{" "}
+            for you.
+          </h1>
+          <div
+            className="animate-rise mt-8 flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-end"
+            style={{ animationDelay: "300ms" }}
+          >
+            <p className="max-w-[38ch] text-lg leading-relaxed text-[#f6eef3]/70">
+              It grows on its own — and never leaves your wallet.
+            </p>
+            <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center">
+              <Button size="lg" onClick={launch}>
+                Start growing
+              </Button>
+              <a
+                href="#how"
+                className="inline-flex items-center justify-center rounded-2xl border border-white/20 bg-white/5 px-6 py-4 text-base font-medium text-[#f6eef3] backdrop-blur transition-colors hover:border-white/40 hover:bg-white/10"
+              >
+                See how it works
+              </a>
             </div>
           </div>
+        </div>
 
-          {/* falling coins aimed at the slot */}
-          <div className="pointer-events-none absolute left-1/2 top-[27%] -translate-x-1/2">
-            <DropCoin x="-34px" delay="300ms" />
-            <DropCoin x="14px" delay="1230ms" />
-            <DropCoin x="-6px" delay="2160ms" />
-          </div>
+        {/* hint */}
+        <div className="pointer-events-none absolute bottom-6 left-1/2 hidden -translate-x-1/2 items-center gap-2.5 font-mono text-[11px] uppercase tracking-[0.2em] text-white/45 md:flex">
+          <span className="animate-ring-pulse h-3.5 w-3.5 rounded-full border border-white/40" />
+          move to stir it
         </div>
       </section>
 
@@ -289,20 +266,6 @@ export default function Landing() {
           </p>
         </div>
       </footer>
-    </div>
-  );
-}
-
-function DropCoin({ x, delay }: { x: string; delay: string }) {
-  return (
-    <div
-      aria-hidden
-      className="animate-coin-into-slot absolute -translate-x-1/2"
-      style={{ ["--x" as string]: x, animationDelay: delay }}
-    >
-      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gold text-sm font-bold text-ink shadow-md ring-2 ring-paper">
-        $
-      </div>
     </div>
   );
 }

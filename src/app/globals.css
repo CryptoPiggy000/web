@@ -24,6 +24,20 @@ body {
   color: var(--color-ink);
 }
 
+/* Dark theme — scoped (e.g. the marketing landing) so it never touches the app. Overrides the neutral
+   tokens to a plum-dark palette; accent/good/gold/crypto keep their brand hues (they pop on dark). */
+.theme-dark {
+  --color-paper: #0b0613;
+  --color-card: #160d21;
+  --color-ink: #f6eef3;
+  --color-muted: #a794a6;
+  --color-faint: #7c6c84;
+  --color-line: rgba(246, 238, 243, 0.12);
+  --color-good: #34d17f;
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
 /* Tailwind v4 dropped the default pointer cursor on buttons — restore it app-wide. */
 button:not(:disabled),
 [role="button"] {
