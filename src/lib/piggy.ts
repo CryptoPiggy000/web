@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useWallets } from "@privy-io/react-auth";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { createPublicClient, createWalletClient, http, parseAbi, erc20Abi, zeroAddress } from "viem";
@@ -192,6 +192,15 @@ function useChainView(): PiggyView {
   const publicClient = usePublicClient();
   const qc = useQueryClient();
 
+  // Balance lock: an earn/close only MOVES money between idle and positions — the total is conserved, so
+  // "Your balance" must not budge (only deposit/withdraw/yield may move it). During those actions we pin the
+  // displayed total to its pre-action value for a short window, so a mid-refresh read glitch can't dip it.
+  const [balanceLock, setBalanceLock] = useState<{ usd: number; until: number } | null>(null);
+  const lockBalance = useCallback((usd: number) => {
+    setBalanceLock({ usd, until: Date.now() + 9000 });
+    setTimeout(() => setBalanceLock(null), 9000);
+  }, []);
+
   const embedded = wallets.find((w) => w.walletClientType === "privy");
   const owner = embedded?.address as `0x${string}` | undefined;
 
@@ -367,11 +376,16 @@ function useChainView(): PiggyView {
     earning: deployed > 0n,
     // Base: `total` is the live chain value (aToken + WETH×price) — already includes gains, so don't add
     // opsAccrued again. Off-Base (mock venues don't accrue): add the ops-reported accrued.
-    liveTotalUsd: () => Number(total) / 1e6 + (isBase ? 0 : opsAccrued),
+    liveTotalUsd: () => {
+      const live = Number(total) / 1e6 + (isBase ? 0 : opsAccrued);
+      // Pinned while an internal earn/close settles — total is conserved, so a read glitch can't dip it.
+      return balanceLock && Date.now() < balanceLock.until ? balanceLock.usd : live;
+    },
     liveAccruedUsd: () => opsAccrued,
     bumpValueUsd: Number(total) / 1e6,
     earn: async (amountBase, risk) => {
       if (!piggyAddress) return;
+      lockBalance(Number(total) / 1e6); // internal move (idle → positions) — pin the balance
       // Execute the ENGINE's plan when the backend + an on-chain crypto venue are configured (API mode +
       // a swap router on this chain); otherwise fall back to the client-static USDC plan.
       let plan;
@@ -396,6 +410,7 @@ function useChainView(): PiggyView {
     harvest: async () => ({ netBase: 0n }), // no yield on mock venues
     closePosition: async (amountBase) => {
       if (!piggyAddress) return;
+      lockBalance(Number(total) / 1e6); // internal move (positions → idle) — pin the balance
       // Base: WITHDRAW savings + SELL the held token back to USDC via the aggregator, split by USD value.
       const plan = isBase
         ? await buildBaseClosePlan(amountBase, aaveBase, heldBalance, fetchQuote)
