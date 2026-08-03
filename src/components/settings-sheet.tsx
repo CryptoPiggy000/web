@@ -25,6 +25,8 @@ export function SettingsSheet({
   const { activity } = usePiggyView();
   const router = useRouter();
   const [copied, setCopied] = useState(false);
+  const [showAllActivity, setShowAllActivity] = useState(false);
+  const RECENT = 5;
 
   const email = user?.email?.address ?? user?.google?.email ?? "—";
 
@@ -68,13 +70,21 @@ export function SettingsSheet({
           <section>
             <p className="mb-2 text-sm font-medium">Recent</p>
             <ul className="max-h-48 space-y-2 overflow-y-auto text-sm">
-              {activity.slice(0, 20).map((a, i) => (
+              {(showAllActivity ? activity : activity.slice(0, RECENT)).map((a, i) => (
                 <li key={i} className="flex justify-between gap-3">
                   <span className="min-w-0 flex-1">{a.summary}</span>
                   <span className="whitespace-nowrap text-xs text-muted">{fmtTime(a.ts)}</span>
                 </li>
               ))}
             </ul>
+            {activity.length > RECENT && (
+              <button
+                onClick={() => setShowAllActivity((v) => !v)}
+                className="mt-2.5 text-xs font-medium text-accent transition-colors hover:text-accent-deep"
+              >
+                {showAllActivity ? "Show less" : `Show all ${activity.length}`}
+              </button>
+            )}
           </section>
         )}
 
