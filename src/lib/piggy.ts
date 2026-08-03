@@ -332,7 +332,10 @@ function useChainView(): PiggyView {
     summary: `${a.kind === "deposit" ? "Deposited" : a.kind === "withdraw" ? "Withdrew" : a.kind} $${a.amount.toFixed(2)}`,
     txHash: a.txHash,
   }));
-  const opsAccrued = ops?.accrued ?? 0;
+  // "Interest earned" = current value of DEPLOYED money − its cost basis (ops.principal). Compute from the
+  // chain `deployed` (savings + crypto), NOT ops.accrued — ops derives accrued from total value, which
+  // includes idle USDC, so idle cash gets mislabelled as interest. This excludes idle by construction.
+  const opsAccrued = ops ? Math.max(0, Number(deployed) / 1e6 - ops.principal) : 0;
 
   const refresh = useCallback(() => {
     qc.invalidateQueries(); // re-reads balance + positions + ops
