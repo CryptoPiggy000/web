@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useWallets } from "@privy-io/react-auth";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { createPublicClient, createWalletClient, http, parseAbi, erc20Abi, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
@@ -201,7 +201,9 @@ function useChainView(): PiggyView {
   const heldToken = (cryptoVenues?.wsteth ?? (USDC_ADDRESS as `0x${string}`)) as `0x${string}`; // fallback: unused off-Base
   const isBase = Boolean(cryptoVenues && cryptoVenues.router === zeroAddress);
   const positionsRead = useReadContracts({
-    query: { enabled: Boolean(piggyAddress), refetchInterval: 8_000 },
+    // keepPreviousData: if a refetch or a piggyAddress blip would otherwise blank the multicall, keep the
+    // last snapshot so idle + positions never desync — prevents the "balance dips then recovers on close".
+    query: { enabled: Boolean(piggyAddress), refetchInterval: 8_000, placeholderData: keepPreviousData },
     contracts: piggyAddress
       ? [
           // Aave savings balance. Real Aave V3 (Base) has no supplied() view — the account's savings =
@@ -228,7 +230,11 @@ function useChainView(): PiggyView {
     address: isBase ? cryptoVenues?.priceFeed : undefined,
     abi: chainlinkAbi,
     functionName: "latestRoundData",
-    query: { enabled: Boolean(isBase && cryptoVenues?.priceFeed && piggyAddress), refetchInterval: 8_000 },
+    query: {
+      enabled: Boolean(isBase && cryptoVenues?.priceFeed && piggyAddress),
+      refetchInterval: 8_000,
+      placeholderData: keepPreviousData,
+    },
   });
   // heldBalance(1e18) × price(1e8) → µUSD(1e6) = /1e20. Feed answer is the 2nd tuple field.
   const ethPrice8 = (feedRead.data as readonly bigint[] | undefined)?.[1] ?? 0n;
