@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Sheet } from "./sheet";
 import { Button } from "./button";
 import { HeroBalance } from "./hero-balance";
@@ -23,6 +24,8 @@ export function PortfolioSheet({
   const total = restingBase + deployedBase;
   const restPct = total > 0n ? Number((restingBase * 1000n) / total) / 10 : 0;
   const earnPct = 100 - restPct;
+  const [showAllActivity, setShowAllActivity] = useState(false);
+  const RECENT = 5;
 
   return (
     <Sheet open={open} onClose={onClose} title="Portfolio">
@@ -107,14 +110,26 @@ export function PortfolioSheet({
         <div>
           <p className="mb-2 text-sm font-medium">Recent activity</p>
           {activity.length > 0 ? (
-            <ul className="space-y-2 text-sm">
-              {activity.slice(0, 8).map((a, i) => (
-                <li key={i} className="flex justify-between gap-3">
-                  <span className="min-w-0 flex-1 truncate">{a.summary}</span>
-                  <span className="whitespace-nowrap text-xs text-muted">{fmtTime(a.ts)}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul
+                className={`space-y-2 text-sm ${showAllActivity ? "max-h-56 overflow-y-auto" : ""}`}
+              >
+                {(showAllActivity ? activity : activity.slice(0, RECENT)).map((a, i) => (
+                  <li key={i} className="flex justify-between gap-3">
+                    <span className="min-w-0 flex-1 truncate">{a.summary}</span>
+                    <span className="whitespace-nowrap text-xs text-muted">{fmtTime(a.ts)}</span>
+                  </li>
+                ))}
+              </ul>
+              {activity.length > RECENT && (
+                <button
+                  onClick={() => setShowAllActivity((v) => !v)}
+                  className="mt-2.5 text-xs font-medium text-accent transition-colors hover:text-accent-deep"
+                >
+                  {showAllActivity ? "Show less" : `Show all ${activity.length}`}
+                </button>
+              )}
+            </>
           ) : (
             <p className="text-sm text-muted">No activity yet — your moves will show up here.</p>
           )}
