@@ -55,7 +55,7 @@ export function TermsGate({ children }: { children: React.ReactNode }) {
               Before you start
             </h2>
             <p className="mt-2 text-sm text-muted">
-              CryptoPiggy is non-custodial — your money stays in your own wallet, and only you can move
+              Piggy is non-custodial — your money stays in your own wallet, and only you can move
               it. A few things to agree to first:
             </p>
             <ul className="mt-3 space-y-2 text-sm text-muted">

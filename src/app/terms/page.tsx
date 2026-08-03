@@ -1,6 +1,6 @@
 // Starter Terms of Service — a template pending legal review, not legal advice. Keep the LAST-UPDATED
 // date in sync with TERMS_VERSION in components/terms-gate.tsx so acceptance re-prompts on changes.
-export const metadata = { title: "Terms of Service · CryptoPiggy" };
+export const metadata = { title: "Terms of Service · Piggy" };
 
 function Section({ n, title, children }: { n: string; title: string; children: React.ReactNode }) {
   return (
@@ -22,9 +22,9 @@ export default function TermsPage() {
       <h1 className="mt-4 text-2xl font-semibold tracking-tight">Terms of Service</h1>
       <p className="mt-1 text-xs text-muted">Last updated 2026-07-27</p>
 
-      <Section n="1" title="What CryptoPiggy is">
+      <Section n="1" title="What Piggy is">
         <p>
-          CryptoPiggy is a <span className="font-medium text-ink">non-custodial software toolkit</span>{" "}
+          Piggy is a <span className="font-medium text-ink">non-custodial software toolkit</span>{" "}
           that helps you deploy your own crypto assets into on-chain protocols. Your funds are held in a
           smart account that only you control. We never take custody of, hold, or have the ability to move
           your funds. Every transaction is signed and submitted by you.
@@ -45,7 +45,7 @@ export default function TermsPage() {
           are solely responsible for your decisions. Consider seeking advice from a licensed professional.
         </p>
         <p>
-          CryptoPiggy is <span className="font-medium text-ink">not a broker, dealer, investment adviser,
+          Piggy is <span className="font-medium text-ink">not a broker, dealer, investment adviser,
           or fiduciary</span>. We do not manage any account for you or exercise any discretion over your
           assets — <span className="font-medium text-ink">you choose every allocation and sign every
           transaction</span>, and the software only carries out what you decide.
@@ -73,7 +73,7 @@ export default function TermsPage() {
 
       <Section n="5" title="Limitation of liability">
         <p>
-          To the maximum extent permitted by law, CryptoPiggy and its operators will not be liable for any
+          To the maximum extent permitted by law, Piggy and its operators will not be liable for any
           indirect, incidental, special, consequential, or exemplary damages, or for any loss of funds,
           profits, or data, arising from your use of the service.
         </p>

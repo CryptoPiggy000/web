@@ -1,5 +1,5 @@
 // Starter Privacy Policy — a template pending legal review, not legal advice.
-export const metadata = { title: "Privacy Policy · CryptoPiggy" };
+export const metadata = { title: "Privacy Policy · Piggy" };
 
 function Section({ n, title, children }: { n: string; title: string; children: React.ReactNode }) {
   return (
@@ -23,7 +23,7 @@ export default function PrivacyPage() {
 
       <Section n="1" title="What we collect">
         <p>
-          Because CryptoPiggy is non-custodial, we collect as little as possible. Depending on how you use
+          Because Piggy is non-custodial, we collect as little as possible. Depending on how you use
           the app, that may include: your <span className="font-medium text-ink">public wallet address</span>{" "}
           and on-chain activity (which is already public on the blockchain), basic{" "}
           <span className="font-medium text-ink">usage analytics</span> (pages viewed, actions taken,

@@ -15,7 +15,7 @@ const mono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CryptoPiggy",
+  title: "Piggy",
   description: "A piggy bank for crypto. Drop money in, watch it grow.",
 };
 

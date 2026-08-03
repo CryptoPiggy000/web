@@ -50,7 +50,7 @@ export default function Home() {
       <AppBackdrop />
       <header className="relative z-10 flex items-center justify-between px-6 py-4">
         <span className="text-lg font-bold tracking-[-0.03em]">
-          Crypto<span className="text-accent">Piggy</span>
+          <span className="text-accent">Piggy</span>
         </span>
         <button
           onClick={() => setSheet("settings")}

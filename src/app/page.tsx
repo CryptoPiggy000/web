@@ -79,7 +79,7 @@ export default function Landing() {
         <nav className="relative z-20 mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
           <span className="flex items-center gap-2 font-bold tracking-tight">
             <Piggy className="w-7" />
-            Crypto<span className="text-accent">Piggy</span>
+            <span className="text-accent">Piggy</span>
           </span>
           <Button size="md" onClick={launch}>
             Launch app
@@ -247,7 +247,7 @@ export default function Landing() {
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
             <span className="flex items-center gap-2">
               <Piggy className="w-5" />
-              <span className="font-medium text-ink">CryptoPiggy</span>
+              <span className="font-medium text-ink">Piggy</span>
               <span>— put your idle money to work</span>
             </span>
             <div className="flex items-center gap-5">
@@ -260,7 +260,7 @@ export default function Landing() {
             </div>
           </div>
           <p className="max-w-2xl text-xs leading-relaxed text-faint">
-            CryptoPiggy is a non-custodial tool, not a financial adviser — nothing here is investment
+            Piggy is a non-custodial tool, not a financial adviser — nothing here is investment
             advice. Crypto is volatile and you can lose money; projected returns are estimates, not
             promises. Fiat cash-in and cash-out are provided by a licensed third-party payment partner.
           </p>
