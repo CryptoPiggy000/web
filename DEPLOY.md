@@ -25,8 +25,7 @@ On-chain guards: **$20k global deposit cap, no whitelist (open to all), deposit 
 | `NEXT_PUBLIC_API_URL` | `https://cryptopiggy-backend-production.ai-suggestion.workers.dev` | backend |
 | `NEXT_PUBLIC_OPS_URL` | `https://cryptopiggy-ops-production.ai-suggestion.workers.dev` | Portfolio reads this |
 | `NEXT_PUBLIC_PRIVY_APP_ID` | ⚠️ **NEEDED** | a **production** Privy app id (embedded wallet, Base enabled) |
-| `NEXT_PUBLIC_PIMLICO_API_KEY` | ⚠️ **NEEDED** | Pimlico key for gasless (EIP-7702 + paymaster); **fund the paymaster** |
-| `NEXT_PUBLIC_SPONSORSHIP_POLICY_ID` | ⚠️ **NEEDED** | Pimlico sponsorship policy id |
+| `NEXT_PUBLIC_SPONSORSHIP_POLICY_ID` | ⚠️ **NEEDED** | Pimlico sponsorship policy id (Base). **The Pimlico API key is NOT a client var** — it lives server-side on the backend worker (`/gasless/rpc` proxy): `wrangler secret put PIMLICO_API_KEY --env production`. **Fund the paymaster** and keep the policy's spending limits tight (that's the real guard against paymaster drain). |
 | `NEXT_PUBLIC_DEPOSIT_FEE_BPS` | `0` | fee off at launch; keep in sync with on-chain `registry.depositFeeBps` if turned on |
 | `NEXT_PUBLIC_SEPOLIA_RPC_URL` | *(optional)* a **public/client-safe Base RPC** | legacy name, used as the generic RPC for public reads in the gasless flow. Leave empty = default transport. **Do NOT put a keyed RPC here — it ships to the browser.** |
 | `NEXT_PUBLIC_DEV_WALLET` | **UNSET** | dev-only local anvil wallet — must NOT be set in production |

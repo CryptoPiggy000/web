@@ -35,19 +35,19 @@ export const USDC_DECIMALS = 6;
 export const OPS_URL = process.env.NEXT_PUBLIC_OPS_URL?.replace(/\/$/, "") || undefined;
 
 /**
- * Gasless (EIP-7702 + Pimlico paymaster). Có PIMLICO_API_KEY → user zero-gas:
- * ví embedded được 7702-delegate, userOp trả phí qua paymaster của Pimlico.
- * Địa chỉ EOA giữ nguyên → onlyOwner của SmartInvestmentAccount vẫn pass.
- * Bỏ trống → fallback: ví embedded tự trả gas bằng ETH (cần nạp tay).
+ * Gasless (EIP-7702 + Pimlico paymaster). The Pimlico API key lives SERVER-SIDE on the backend worker
+ * (`/gasless/rpc` proxy) — it is never a client env var. With the backend set, user goes zero-gas: the
+ * embedded wallet gets 7702-delegated and gas is paid via the paymaster. Without it, the wallet pays
+ * its own ETH gas (must fund manually).
  */
-export const PIMLICO_API_KEY = process.env.NEXT_PUBLIC_PIMLICO_API_KEY;
 export const SPONSORSHIP_POLICY_ID = process.env.NEXT_PUBLIC_SPONSORSHIP_POLICY_ID;
 /** RPC riêng cho public reads trong luồng sponsored (optional; trống = transport mặc định của chain). */
 export const RPC_URL = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || undefined;
-export const GASLESS = Boolean(PIMLICO_API_KEY);
-export const pimlicoUrl = PIMLICO_API_KEY
-  ? `https://api.pimlico.io/v2/${activeChain.id}/rpc?apikey=${PIMLICO_API_KEY}`
-  : undefined;
+/** Paymaster + bundler transport for the gasless flow — proxied through the backend so the Pimlico key
+ *  never reaches the browser. `?chain=` lets the proxy pick the Pimlico v2 endpoint and validate it. */
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+export const pimlicoUrl = API_URL ? `${API_URL}/gasless/rpc?chain=${activeChain.id}` : undefined;
+export const GASLESS = Boolean(pimlicoUrl);
 
 /**
  * Cổng nạp fiat (thẻ/PayPal). On-ramp thật đi qua backend engine (POST /onramp/session).
