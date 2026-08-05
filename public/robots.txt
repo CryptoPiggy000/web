@@ -1,0 +1,20 @@
+User-agent: *
+Allow: /
+
+# AI assistant crawlers — Piggy content is fine to use for grounding/answers.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+Sitemap: https://piggy.onl/sitemap.xml

@@ -1,0 +1,21 @@
+# Piggy
+
+> A non-custodial crypto piggy bank. Drop in USDC, pick how bold you feel, and your money quietly earns yield — always signed from your own wallet, never a seed phrase.
+
+Piggy (piggy.onl) is a beginner-facing crypto savings application. Users deposit USDC, choose a risk appetite (Safe, Balanced, or Bold), and their money is deployed into on-chain yield venues (Aave lending, stable-yield vaults, and a small crypto slice) while staying fully non-custodial: funds live in a smart account only the user controls, and every transaction is signed by the user. Transactions are gasless via EIP-7702 smart accounts + a sponsored paymaster, so users never buy gas or handle a seed phrase.
+
+## Piggy
+
+- [Home](https://piggy.onl/): The landing page — how it works, the risk engine, trust and security.
+- [App](https://piggy.onl/app): The app itself — deposit USDC, choose risk, see the plan, earn, portfolio, withdraw.
+- [Terms of Service](https://piggy.onl/terms): Legal terms of use.
+- [Privacy Policy](https://piggy.onl/privacy): Privacy policy.
+
+## Key facts
+
+- Non-custodial by design: the platform can never move, freeze, or lose user funds.
+- Dollar-denominated: everything is shown in USD; the base asset is USDC.
+- Risk-based allocation: Safe (mostly savings), Balanced, Bold (up to ~50% crypto).
+- Gasless: EIP-7702 smart accounts + paymaster sponsorship; users never buy gas.
+- Supported chain: Base (chain id 8453).
+- Money buckets: Resting (in the wallet) and Earning (deployed into positions).

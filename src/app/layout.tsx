@@ -51,6 +51,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable} h-full antialiased`}>
+      <head>
+        {/* AI/SEO discovery: llms.txt (LLM-friendly site summary) + sitemap for search crawlers. */}
+        <link rel="llms.txt" href="/llms.txt" />
+        <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+      </head>
       <body className="min-h-dvh font-sans">
         <Providers>{children}</Providers>
       </body>
