@@ -4,8 +4,7 @@ import { useRouter } from "next/navigation";
 import { Piggy } from "@/components/piggy";
 import { Button } from "@/components/button";
 import { LiveStats } from "@/components/live-stats";
-import { AnimaField } from "@/components/anima-field";
-import { Reveal, useInView } from "@/components/motion";
+import { Reveal, useInView, usePrefersReducedMotion } from "@/components/motion";
 import { IconShield, IconTrendUp, IconSparkle, IconCard } from "@/components/icons";
 
 const STEPS = [
@@ -65,13 +64,26 @@ const TRUST = [
 export default function Landing() {
   const router = useRouter();
   const launch = () => router.push("/app");
+  const reduceMotion = usePrefersReducedMotion();
 
   return (
     <div className="theme-dark min-h-dvh bg-paper text-ink">
-      {/* ── hero: a dark living particle field ── */}
+      {/* ── hero: a living video stage ── */}
       <section className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-[#0b0613] text-[#f6eef3]">
-        <AnimaField className="pointer-events-none absolute inset-0 -z-10 h-full w-full" />
-        {/* vignette + a soft pink core glow behind the field */}
+        {!reduceMotion && (
+          <video
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="auto"
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover"
+          >
+            <source src="/hero-bg.mp4" type="video/mp4" />
+          </video>
+        )}
+        {/* vignette + a soft pink core glow over the video (keeps text readable) */}
         <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(120%_90%_at_50%_38%,transparent_38%,rgba(5,2,12,0.74))]" />
         <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(52%_42%_at_50%_46%,rgba(255,61,127,0.18),transparent_62%)]" />
 

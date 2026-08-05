@@ -5,6 +5,21 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 const reduced = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/** Reactive prefers-reduced-motion. Starts `false` so SSR/prerender output matches the first client paint. */
+export function usePrefersReducedMotion() {
+  const [reduce, setReduce] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia("(prefers-reduced-motion: reduce)");
+    // sync on mount so the first paint matches the preference; the change listener keeps it live
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
+    setReduce(m.matches);
+    const onChange = (e: MediaQueryListEvent) => setReduce(e.matches);
+    m.addEventListener("change", onChange);
+    return () => m.removeEventListener("change", onChange);
+  }, []);
+  return reduce;
+}
+
 /** Fires once when the element scrolls into view. Returns [ref, inView]. */
 export function useInView<T extends HTMLElement>(rootMargin = "0px 0px -12% 0px") {
   const ref = useRef<T>(null);
