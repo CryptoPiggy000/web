@@ -477,7 +477,7 @@ function useChainView(): PiggyView {
         const eng = await api.plan({ strategy: STRATEGY_ID[risk], amount: amountBase.toString(), term: "1y" });
         // Base: BUY the crypto slice through the DEX aggregator (real router/minOut). Anvil: mock router.
         plan = isBase
-          ? await buildBaseEarnPlan(eng.summary, amountBase, fetchQuote)
+          ? await buildBaseEarnPlan(eng.summary, amountBase, fetchQuote, eng.allocation, venues)
           : buildEnginePlan(eng.summary, amountBase, piggyAddress);
       } else {
         plan = buildEarnPlan(optionSummary(risk).slices, amountBase);
@@ -497,7 +497,7 @@ function useChainView(): PiggyView {
       lockBalance(Number(total) / 1e6); // internal move (positions → idle) — pin the balance
       // Base: WITHDRAW savings + SELL the held token back to USDC via the aggregator, split by USD value.
       const plan = isBase
-        ? await buildBaseClosePlan(amountBase, aaveBase, heldBalance, fetchQuote)
+        ? await buildBaseClosePlan(amountBase, heldPositions, heldBalance, fetchQuote)
         : buildClosePlan(
             [
               { key: "aave", base: aaveBase },

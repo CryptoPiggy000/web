@@ -1,5 +1,9 @@
 import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbi, zeroAddress } from "viem";
 import { FACTORY_ADDRESS, USDC_ADDRESS, activeChain } from "./chain";
+import { savingsDeposits, closeWithdrawals, type RegistryVenue, type HeldPosition } from "./plan";
+
+/** One row of the engine's suggested allocation (see api.ts PlanDetail). */
+export type EngineAllocation = { position_id: string; pct: number; class: "savings" | "crypto" };
 
 // Deployed on Ethereum Sepolia (contracts/DEPLOYMENTS.md). Mocks over real Circle USDC.
 // The venue set is read from the on-chain registry rather than hardcoded here, so venues added by the
@@ -265,13 +269,23 @@ export async function buildBaseEarnPlan(
   summary: { savingsPct: number; cryptoPct: number },
   amountBase: bigint,
   quote: QuoteFn,
+  allocation: EngineAllocation[] = [],
+  venues: RegistryVenue[] = [],
 ): Promise<PlanAction[]> {
   const v = cryptoVenues;
   if (!v) return [];
   const savingsAmt = (amountBase * BigInt(summary.savingsPct)) / 100n;
   const cryptoAmt = amountBase - savingsAmt;
   const actions: PlanAction[] = [];
-  if (savingsAmt > 0n) actions.push(deposit(positionId(AAVE_KIND, v.aave), savingsAmt));
+  if (savingsAmt > 0n) {
+    // Spread across the venues the ENGINE actually chose (registry-approved only). Previously the whole
+    // savings slice went to Aave regardless — the lowest-yielding venue in the set — which threw away the
+    // planner's entire job. Falls back to Aave if the engine gave us nothing usable, so the money is
+    // never left idle.
+    const legs = savingsDeposits(allocation, savingsAmt, venues, v.aave, USDC_ADDRESS as `0x${string}`);
+    if (legs.length > 0) for (const l of legs) actions.push(deposit(l.positionId, l.amount));
+    else actions.push(deposit(positionId(AAVE_KIND, v.aave), savingsAmt));
+  }
   if (cryptoAmt > 0n) {
     const usdc = USDC_ADDRESS as `0x${string}`;
     const q = await quote(usdc, v.wsteth, cryptoAmt);
@@ -287,7 +301,7 @@ export async function buildBaseEarnPlan(
  */
 export async function buildBaseClosePlan(
   amountBase: bigint,
-  aaveBase: bigint,
+  savings: HeldPosition[],
   heldBalance: bigint,
   quote: QuoteFn,
 ): Promise<PlanAction[]> {
@@ -298,13 +312,16 @@ export async function buildBaseClosePlan(
   // Value the held slice up front (a quote for the full balance) so the split is by USD value.
   const valQuote = heldBalance > 0n ? await quote(v.wsteth, usdc, heldBalance) : null;
   const heldValue = valQuote ? BigInt(valQuote.buyAmount) : 0n;
-  const total = aaveBase + heldValue;
+  const savingsTotal = savings.reduce((sum, p) => sum + p.base, 0n);
+  const total = savingsTotal + heldValue;
   if (total === 0n) return [];
   const full = amountBase >= total;
 
   const actions: PlanAction[] = [];
-  const aaveCut = full ? aaveBase : (amountBase * aaveBase) / total;
-  if (aaveCut > 0n) actions.push(withdrawAction(aavePositionId(v.aave), aaveCut));
+  // Unwind EVERY savings venue proportionally. The old path withdrew only from Aave, so anything
+  // deployed to a vault could not be recovered through the app — stranded funds.
+  const savingsCut = full ? savingsTotal : (amountBase * savingsTotal) / total;
+  for (const w of closeWithdrawals(savingsCut, savings)) actions.push(withdrawAction(w.positionId, w.amount));
 
   const heldToSell = full ? heldBalance : (heldBalance * amountBase) / total;
   if (heldToSell > 0n) {
