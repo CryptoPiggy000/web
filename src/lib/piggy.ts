@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useWallets } from "@privy-io/react-auth";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { createPublicClient, createWalletClient, http, parseAbi, erc20Abi, zeroAddress } from "viem";
+import { createPublicClient, createWalletClient, http, parseAbi, erc20Abi, zeroAddress, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { useReadContract, useReadContracts, useWriteContract, usePublicClient } from "wagmi";
@@ -12,6 +12,17 @@ import { usePiggy } from "./usePiggy";
 import { useSim, deployedTotalWei, accruedWei } from "./sim";
 import { optionSummary } from "./planner";
 import { api, API_MODE } from "./api";
+import { ADAPTER_AAVE, ADAPTER_ERC4626, type RegistryVenue, type HeldPosition } from "./plan";
+
+// wagmi infers a fixed TUPLE from a literal `contracts` array, which a dynamic-length multicall cannot
+// satisfy. This is the loose shape the runtime actually needs; only compile-time tuple inference is lost.
+type MulticallContracts = readonly {
+  abi?: Abi;
+  functionName?: string;
+  args?: readonly unknown[];
+  address?: `0x${string}`;
+  chainId?: number;
+}[];
 import { USDC_ADDRESS, FACTORY_ADDRESS, OPS_URL, activeChain } from "./chain";
 import {
   CHAIN_MODE,
@@ -22,6 +33,8 @@ import {
   accountAbi,
   aaveAbi,
   vaultAbi,
+  registryAbi,
+  venueBalanceAbi,
   chainlinkAbi,
   buildEarnPlan,
   buildEnginePlan,
@@ -209,29 +222,99 @@ function useChainView(): PiggyView {
   const savingsAave = (cryptoVenues?.aave ?? AAVE_ADDRESS) as `0x${string}`;
   const heldToken = (cryptoVenues?.wsteth ?? (USDC_ADDRESS as `0x${string}`)) as `0x${string}`; // fallback: unused off-Base
   const isBase = Boolean(cryptoVenues && cryptoVenues.router === zeroAddress);
+  // The APPROVED venue set, read from the on-chain registry (Base). Hardcoding it here is what let the
+  // app drift from what the account will actually accept; reading it means a venue the owner adds via
+  // addProtocol shows up with no redeploy, and we never build a deposit that would revert.
+  const registryAddr = isBase ? cryptoVenues?.registry : undefined;
+  const venueIdsRead = useReadContract({
+    address: registryAddr,
+    abi: registryAbi,
+    functionName: "allPositionIds",
+    query: { enabled: Boolean(registryAddr), staleTime: 300_000 },
+  });
+  const venueIds = useMemo(() => (venueIdsRead.data as readonly `0x${string}`[] | undefined) ?? [], [venueIdsRead.data]);
+  const venueRead = useReadContracts({
+    query: { enabled: venueIds.length > 0, staleTime: 300_000, placeholderData: keepPreviousData },
+    contracts: venueIds.map((id) => ({
+      address: registryAddr as `0x${string}`,
+      abi: registryAbi,
+      functionName: "getProtocol" as const,
+      args: [id] as const,
+    })),
+  });
+  /** Approved, ACTIVE venues denominated in our base asset — the only things we may deposit into. */
+  const venues: RegistryVenue[] = useMemo(() => {
+    const rows = venueRead.data ?? [];
+    const out: RegistryVenue[] = [];
+    for (const r of rows) {
+      const v = r?.result as readonly [number, `0x${string}`, `0x${string}`, `0x${string}`, number] | undefined;
+      if (!v) continue;
+      const [adapter, target, asset, , status] = v;
+      if (status !== 1) continue; // not ACTIVE -> deposits are blocked on-chain
+      if (asset.toLowerCase() !== String(USDC_ADDRESS).toLowerCase()) continue;
+      if (adapter !== ADAPTER_AAVE && adapter !== ADAPTER_ERC4626) continue;
+      out.push({ adapter, target, asset });
+    }
+    return out;
+  }, [venueRead.data]);
+
+  // One read per approved venue: Aave's balance is its aToken (no supplied() view on real Aave V3),
+  // an ERC4626 vault's is maxWithdraw (what the account could actually pull out right now).
+  const venueContracts = useMemo(
+    () =>
+      !piggyAddress
+        ? []
+        : venues.map((v) =>
+            v.adapter === ADAPTER_AAVE
+              ? { address: (cryptoVenues?.atoken ?? v.target) as `0x${string}`, abi: venueBalanceAbi, functionName: "balanceOf" as const, args: [piggyAddress] as const }
+              : { address: v.target, abi: venueBalanceAbi, functionName: "maxWithdraw" as const, args: [piggyAddress] as const },
+          ),
+    [venues, piggyAddress],
+  );
+
   const positionsRead = useReadContracts({
     // keepPreviousData: if a refetch or a piggyAddress blip would otherwise blank the multicall, keep the
     // last snapshot so idle + positions never desync — prevents the "balance dips then recovers on close".
     query: { enabled: Boolean(piggyAddress), refetchInterval: 8_000, placeholderData: keepPreviousData },
-    contracts: piggyAddress
+    // On Base the savings legs are DERIVED from the registry venue set, so a balance in any approved vault
+    // is visible — previously only the Aave aToken was read, so money deployed anywhere else simply did
+    // not appear. Off-Base keeps the original fixed pair (mock venues).
+    // Cast: wagmi infers a fixed TUPLE from a literal array, which a dynamic-length multicall can't
+    // satisfy. Runtime shape is correct; only the compile-time tuple inference is given up.
+    contracts: (piggyAddress
       ? [
-          // Aave savings balance. Real Aave V3 (Base) has no supplied() view — the account's savings =
-          // its aToken balance (1:1 USDC). Off-Base (Sepolia mock) still exposes supplied().
-          isBase && cryptoVenues?.atoken
-            ? { address: cryptoVenues.atoken, abi: erc20Abi, functionName: "balanceOf", args: [piggyAddress] }
-            : { address: savingsAave, abi: aaveAbi, functionName: "supplied", args: [piggyAddress, USDC_ADDRESS as `0x${string}`] },
-          { address: VAULT_ADDRESS, abi: vaultAbi, functionName: "maxWithdraw", args: [piggyAddress] },
+          ...(isBase
+            ? venueContracts
+            : [
+                { address: savingsAave, abi: aaveAbi, functionName: "supplied", args: [piggyAddress, USDC_ADDRESS as `0x${string}`] },
+                { address: VAULT_ADDRESS, abi: vaultAbi, functionName: "maxWithdraw", args: [piggyAddress] },
+              ]),
           { address: heldToken, abi: erc20Abi, functionName: "balanceOf", args: [piggyAddress] },
           // Idle USDC read in the SAME multicall as the positions, so idle + deployed share one atomic
           // snapshot — no flicker when funds move between them (the "$7.5 then $5" glitch on close).
           { address: USDC_ADDRESS as `0x${string}`, abi: erc20Abi, functionName: "balanceOf", args: [piggyAddress] },
         ]
-      : [],
+      : []) as unknown as MulticallContracts,
   });
-  const aaveBase = (positionsRead.data?.[0]?.result as bigint | undefined) ?? 0n;
-  const vaultBase = (positionsRead.data?.[1]?.result as bigint | undefined) ?? 0n;
+  // Base: the first N results are the registry venues, in order. Off-Base: the original [aave, vault] pair.
+  const nVenues = isBase ? venueContracts.length : 2;
+  const heldPositions: HeldPosition[] = useMemo(
+    () =>
+      !isBase
+        ? []
+        : venues.map((v, i) => ({ ...v, base: (positionsRead.data?.[i]?.result as bigint | undefined) ?? 0n })),
+    [venues, positionsRead.data, isBase],
+  );
+  // Savings total across EVERY venue (was: the Aave slot only).
+  const savingsBase = isBase
+    ? heldPositions.reduce((sum, p) => sum + p.base, 0n)
+    : (positionsRead.data?.[0]?.result as bigint | undefined) ?? 0n;
+  const aaveBase = isBase
+    ? heldPositions.find((p) => p.adapter === ADAPTER_AAVE)?.base ?? 0n
+    : (positionsRead.data?.[0]?.result as bigint | undefined) ?? 0n;
+  const vaultBase = isBase ? 0n : (positionsRead.data?.[1]?.result as bigint | undefined) ?? 0n;
   // Held token (Base crypto slice); only consulted when isBase, so the off-Base USDC fallback is ignored.
-  const heldBalance = isBase ? (positionsRead.data?.[2]?.result as bigint | undefined) ?? 0n : 0n;
+  const heldBalance = isBase ? (positionsRead.data?.[nVenues]?.result as bigint | undefined) ?? 0n : 0n;
 
   // Chainlink ETH/USD (Base) to value the WETH slice on-chain — same freshness as the balance reads, so a
   // just-unwound crypto slice never lingers in the total (separate hook: it returns a tuple, not a uint).
@@ -266,7 +349,7 @@ function useChainView(): PiggyView {
 
   // Idle USDC — from the positions multicall (atomic with aToken/held), falling back to usePiggy's own
   // read before the multicall first resolves.
-  const idle = (positionsRead.data?.[3]?.result as bigint | undefined) ?? balance;
+  const idle = (positionsRead.data?.[nVenues + 1]?.result as bigint | undefined) ?? balance;
 
   // Ops indexer (public /account/:addr) when configured: real interest, activity, and the FULL per-venue
   // position breakdown (many Morpho vaults + crypto) — what the 2 hardcoded chain reads can't give.

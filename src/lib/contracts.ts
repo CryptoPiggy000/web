@@ -2,7 +2,19 @@ import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbi, zeroAddre
 import { FACTORY_ADDRESS, USDC_ADDRESS, activeChain } from "./chain";
 
 // Deployed on Ethereum Sepolia (contracts/DEPLOYMENTS.md). Mocks over real Circle USDC.
-export const REGISTRY_ADDRESS = "0xe7F24D9963d992b2d3b838c615d41E94Ca8F8bd1" as const;
+// The venue set is read from the on-chain registry rather than hardcoded here, so venues added by the
+// owner (addProtocol) are picked up with no redeploy — and the app can never try to deposit into
+// something unapproved, which would revert the whole plan.
+// One ABI for every venue-balance read so the multicall array stays homogeneous: Aave venues read the
+// aToken's balanceOf, ERC4626 vaults read maxWithdraw.
+export const venueBalanceAbi = parseAbi([
+  "function balanceOf(address owner) view returns (uint256)",
+  "function maxWithdraw(address owner) view returns (uint256)",
+]);
+export const registryAbi = parseAbi([
+  "function allPositionIds() view returns (bytes32[])",
+  "function getProtocol(bytes32 id) view returns (uint8 adapterType, address target, address asset, bytes32 category, uint8 status)",
+]);
 export const AAVE_ADDRESS = "0x5c631226d0467ff2C15065b7173383278A639bb8" as const;
 export const VAULT_ADDRESS = "0xc6fA7dc154218b6d7bB81fc19530D16D16778b9E" as const;
 
@@ -109,6 +121,7 @@ const CRYPTO_VENUES: Record<
     aave: `0x${string}`;
     wsteth: `0x${string}`;
     router: `0x${string}`;
+    registry?: `0x${string}`; // on-chain venue set (Base); absent -> fall back to the fixed Aave venue
     atoken?: `0x${string}`;
     priceFeed?: `0x${string}`; // Chainlink USD feed for the held asset (values the crypto slice on-chain)
   }
@@ -121,6 +134,7 @@ const CRYPTO_VENUES: Record<
   // Base mainnet: `wsteth` = the held-asset token to buy (WETH); the swap ROUTER is dynamic — it comes
   // from the DEX-aggregator quote (api.quote → /market/quote → 0x/KyberSwap), not a fixed router here.
   8453: {
+    registry: "0x451Ed81bE37303E66Bb4851e58B86B3dCFd6047a", // LIVE ProtocolRegistry on Base
     aave: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5", // Base Aave V3 Pool (savings deposit)
     // Aave V3 has no supplied() view; the account's savings = aToken balance. aBasUSDC (1:1 USDC, 6dp).
     atoken: "0x4e65fE4DbA92790696d040ac24Aa414708F5c0AB",
